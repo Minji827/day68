@@ -71,21 +71,46 @@ def collect_base_rate(start: str, end: str, cycle: str = "D") -> None:
     _write_json(DATA_DIR / "ecos" / f"base_rate_{cycle}_{start}_{end}.json", rows)
 
 
+def resolve_corp(args) -> dict | None:
+    """--stock-code(종목코드, 고유값)가 우선. --corp(회사명)는 보조 수단이며,
+    후보가 여럿이면 추측하지 않고 목록을 보여준 뒤 중단한다."""
+    if args.stock_code:
+        corp = opendart_client.find_corp_by_stock_code(args.stock_code)
+        if not corp:
+            print(f"종목코드 '{args.stock_code}'에 해당하는 기업을 찾을 수 없습니다.")
+            return None
+        return corp
+
+    matches = opendart_client.find_corp_code(args.corp)
+    listed = [m for m in matches if m["stock_code"]]
+    if not listed:
+        print(f"'{args.corp}' 상장사 매칭 실패. 후보: {matches[:5]}")
+        return None
+    if len(listed) > 1:
+        print(f"'{args.corp}'로 상장사가 {len(listed)}개 매칭됨 - 종목코드로 다시 지정하세요:")
+        for m in listed:
+            print(f"  {m['corp_name']} (종목코드 {m['stock_code']}, corp_code {m['corp_code']})")
+        return None
+    return listed[0]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--corp", required=True, help="회사명 (부분일치 허용, 상장사 우선)")
+    parser.add_argument("--stock-code", help="6자리 종목코드 (예: 005930) - 모호함 없이 기업을 특정, 우선 사용")
+    parser.add_argument("--corp", help="회사명 (부분일치). 후보가 여럿이면 --stock-code로 다시 지정 요구")
     parser.add_argument("--bgn-de", default="20250101")
     parser.add_argument("--end-de", default=date.today().strftime("%Y%m%d"))
     parser.add_argument("--years", nargs="*", default=["2024", "2025"], help="재무제표 사업연도")
     parser.add_argument("--skip-documents", action="store_true")
     args = parser.parse_args()
 
-    matches = opendart_client.find_corp_code(args.corp)
-    listed = [m for m in matches if m["stock_code"]]
-    if not listed:
-        print(f"'{args.corp}' 상장사 매칭 실패. 후보: {matches[:5]}")
+    if not args.stock_code and not args.corp:
+        print("--stock-code 또는 --corp 중 하나는 필요합니다.")
         return
-    corp = listed[0]
+
+    corp = resolve_corp(args)
+    if not corp:
+        return
     print(f"대상 기업: {corp}")
     corp_code = corp["corp_code"]
 

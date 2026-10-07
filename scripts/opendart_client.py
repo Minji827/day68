@@ -77,6 +77,23 @@ def find_corp_code(corp_name: str) -> list[dict]:
     return matches
 
 
+def find_corp_by_stock_code(stock_code: str) -> dict | None:
+    """6자리 종목코드로 정확히 1개 기업을 찾는다 (이름 검색과 달리 모호함이 없음)."""
+    import xml.etree.ElementTree as ET
+
+    path = download_corp_code()
+    root = ET.parse(path).getroot()
+    for node in root.findall("list"):
+        if (node.findtext("stock_code") or "").strip() == stock_code:
+            return {
+                "corp_code": node.findtext("corp_code"),
+                "corp_name": (node.findtext("corp_name") or "").strip(),
+                "stock_code": stock_code,
+                "modify_date": node.findtext("modify_date"),
+            }
+    return None
+
+
 def get_disclosure_list(
     corp_code: str,
     bgn_de: str,

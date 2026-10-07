@@ -2,9 +2,12 @@
 run_demo.bat에서 호출. 각 단계는 별도 프로세스로 실행해서 (subprocess 리스트 인자 사용,
 쉘 이스케이핑/인코딩 문제 없음) 실패하면 즉시 중단한다.
 
+기업 지정은 종목코드가 기본값이다 (모호함 없음 - 회사명 부분일치는 동명/계열사가 많아
+엉뚱한 기업을 고를 수 있어서 collect.py가 후보 여럿이면 추측 없이 멈춘다).
+
 Usage:
-    python scripts/run_demo.py [corp_name] [review_date]
-    (기본값: 삼성전자, 2026-01-01)
+    python scripts/run_demo.py [종목코드|회사명] [review_date]
+    (기본값: 005930(삼성전자), 2026-01-01. 6자리 숫자면 종목코드로, 아니면 회사명으로 처리)
 """
 from __future__ import annotations
 
@@ -30,18 +33,23 @@ def start_postgres() -> None:
 
 
 def main() -> None:
-    corp = sys.argv[1] if len(sys.argv) > 1 else "삼성전자"
+    target = sys.argv[1] if len(sys.argv) > 1 else "005930"
     review_date = sys.argv[2] if len(sys.argv) > 2 else "2026-01-01"
+    is_stock_code = target.isdigit() and len(target) == 6
+    corp_flag = ["--stock-code", target] if is_stock_code else ["--corp", target]
 
     start_postgres()
     run("DB 연결 대기", ["scripts/wait_for_db.py"])
     run("스키마 적용", ["scripts/init_db.py"])
-    run(f"데이터 수집: {corp}", ["scripts/collect.py", "--corp", corp, "--bgn-de", "20250101", "--end-de", "20261007"])
+    run(
+        f"데이터 수집: {target}",
+        ["scripts/collect.py", *corp_flag, "--bgn-de", "20250101", "--end-de", "20261007"],
+    )
     run("RAW -> CORE: raw 적재", ["scripts/load_raw.py"])
     run("RAW -> CORE: core 변환", ["scripts/load_core.py"])
     run("변화 탐지 규칙 실행", ["scripts/run_rules.py", "--review-date", review_date])
     run("결과 출력", ["scripts/show_results.py"])
-    run("정정 전후 비교 (AI 없이, 원문 diff)", ["scripts/compare_disclosure.py", "--corp", corp, "--review-date", review_date])
+    run("정정 전후 비교 (AI 없이, 원문 diff)", ["scripts/compare_disclosure.py", *corp_flag, "--review-date", review_date])
 
     print("\n=== 완료 ===")
 

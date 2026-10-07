@@ -22,11 +22,15 @@ Docker Desktop(이미 설치되어 있음) 기동 → 스키마 적용 → 샘�
 적재 → 규칙 실행 → 결과 출력까지 한 번에 돈다.
 
 ```
-run_demo.bat [회사명] [검토일]
+run_demo.bat [종목코드|회사명] [검토일]
 ```
 
-인자 없이 실행하면 `삼성전자` / `2026-01-01`로 기본 실행된다 (cmd.exe에서 바로 더블클릭하거나
-`run_demo.bat 한화솔루션 2026-01-01`처럼 인자를 줄 수 있음).
+인자 없이 실행하면 `005930`(삼성전자) / `2026-01-01`로 기본 실행된다. 6자리 숫자를 주면
+종목코드로, 아니면 회사명으로 처리한다 (`run_demo.bat 009830 2026-01-01`처럼).
+
+**기업 지정은 종목코드(`--stock-code`)가 기본값**이다. 회사명(`--corp`)은 모호할 수 있어서
+(예: `삼성`은 30개 상장사에 매칭됨) `collect.py`/`compare_disclosure.py`가 후보 여럿이면
+추측하지 않고 전부 보여준 뒤 멈춘다 — 종목코드로 다시 지정해야 진행된다.
 
 ### PostgreSQL 포트 메모
 
@@ -83,7 +87,7 @@ docker compose up -d
   (`insufficient_quota`) — 키 발급/충전 후 `python scripts/explain.py --review-date 2026-01-01`
 
 ```bash
-.venv/Scripts/python scripts/collect.py --corp 삼성전자 --bgn-de 20250101 --end-de 20261007
+.venv/Scripts/python scripts/collect.py --stock-code 005930 --bgn-de 20250101 --end-de 20261007
 .venv/Scripts/python scripts/init_db.py
 .venv/Scripts/python scripts/load_raw.py
 .venv/Scripts/python scripts/load_core.py
