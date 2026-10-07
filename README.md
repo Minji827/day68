@@ -16,20 +16,30 @@ cp .env.example .env   # OPENDART_API_KEY / ECOS_API_KEY / OPENAI_API_KEY / DATA
 
 `.env`는 git에 커밋되지 않습니다 (`.gitignore` 처리).
 
-### PostgreSQL 실행
+### 가장 쉬운 방법: `run_demo.bat`
 
-Docker Desktop이 없다면 WSL2에 docker가 깔려 있는지 확인하고 (`wsl -d Ubuntu -- docker --version`),
-WSL 안에서 compose로 띄운다. **WSL 유틸리티 VM은 기본적으로 유휴 시 자동 종료되므로
-`%USERPROFILE%\.wslconfig`에 `vmIdleTimeout=-1`을 넣어 끄지 않는 게 중요** (안 하면
-localhost:5432 연결이 몇 분마다 끊김 — 실측 확인된 이슈).
+Docker Desktop(이미 설치되어 있음) 기동 → 스키마 적용 → 샘플 기업 수집 → RAW/CORE
+적재 → 규칙 실행 → 결과 출력까지 한 번에 돈다.
 
-```bash
-wsl -d Ubuntu -- bash -c "cd /mnt/c/Users/redsu/day68 && docker compose up -d"
+```
+run_demo.bat [회사명] [검토일]
 ```
 
-WSL2는 localhost 포트포워딩을 지원해서 Windows 쪽 Python(`DATABASE_URL`)에서 바로
-`localhost:5432`로 붙는다. Docker Desktop이 정상 설치되어 있다면 그냥
-`docker compose up -d`만 Windows에서 실행하면 된다.
+인자 없이 실행하면 `삼성전자` / `2026-01-01`로 기본 실행된다 (cmd.exe에서 바로 더블클릭하거나
+`run_demo.bat 한화솔루션 2026-01-01`처럼 인자를 줄 수 있음).
+
+### PostgreSQL 포트 메모
+
+이 PC에는 **다른 랩 실습용 Postgres(`finance-postgres`, `card_master`/`customer`/`merchant`
+등 전혀 다른 스키마)가 이미 Docker Desktop에서 5432 포트를 쓰고 있음** — 우리 프로젝트는
+절대 그 컨테이너를 건드리지 않고 **5433** 포트로 분리했다 (`docker-compose.yml`,
+`DATABASE_URL`). `docker ps`로 `day68-postgres-1`과 `finance-postgres`가 둘 다 떠 있는 게
+정상이다.
+
+수동으로 띄우려면:
+```bash
+docker compose up -d
+```
 
 ## 현재까지 구현
 
@@ -50,6 +60,18 @@ WSL2는 localhost 포트포워딩을 지원해서 Windows 쪽 Python(`DATABASE_U
 - `scripts/run_rules.py` — **변화 탐지 SQL 룰엔진.** F1~F5(재무) + D1~D5(공시 가산) +
   CTX1(기준금리 맥락, 무점수) 실행 → `mart.change_events` / `mart.company_priority` /
   `mart.kpi_daily` / `mart.rate_context` 채움
+- `scripts/run_demo.py` / `run_demo.bat` — 위 전체 과정을 한 번에 실행하는 원클릭 러너
+- `scripts/wait_for_db.py`, `scripts/show_results.py` — 데모 러너 보조 스크립트
+
+**해설서 생성 (OpenAI, FR-05) — 코드 완성, 실행은 보류**
+- `scripts/dart_xml.py` — 공시원문(document.xml) 섹션 파서. **실측으로 두 가지 포맷을
+  확인**: 표준 DART XML(ATOC 마커로 섹션 구분)과, 일부 정정/자율공시는 깨진 HTML(XFORM
+  템플릿)로 내려옴 — strict XML 파싱이 실패해서 HTML fallback(제목+본문 통짜 1~2섹션)을
+  추가함. PRD 11번이 예견한 리스크가 실제로 발생한 케이스.
+- `scripts/explain.py` — 정정공시(+원공시)를 OpenAI에 넘겨 신구 대비 해설 문장 생성,
+  근거 발췌가 실제 원문의 부분 문자열인지 검증 후 통과한 것만 `mart.explanation_sentences`에
+  저장 (FR-05 AC: 근거 없는 문장 제외). **OpenAI 계정 크레딧이 없어 실제 호출 검증은 보류**
+  (`insufficient_quota`) — 키 발급/충전 후 `python scripts/explain.py --review-date 2026-01-01`
 
 ```bash
 .venv/Scripts/python scripts/collect.py --corp 삼성전자 --bgn-de 20250101 --end-de 20261007
@@ -59,10 +81,13 @@ WSL2는 localhost 포트포워딩을 지원해서 Windows 쪽 Python(`DATABASE_U
 .venv/Scripts/python scripts/run_rules.py --review-date 2026-01-01
 ```
 
-한화솔루션 실데이터로 전체 파이프라인(수집→RAW→CORE→규칙엔진) 검증 완료:
-F2(영업활동현금흐름 흑자→적자, 6,385억→-6,550억) + F5(차입금 +22.3%, 2개 규칙 모두
-20% 기준값 초과) + D2(유상증자 결정 2건) + D5(정정공시 6건, 2건 원공시 연결/4건 "정정
-전 공시 없음") → 합산 13점(가중치 3+2+1×8) → `priority_level='high'` 정상 산출.
+삼성전자·한화솔루션 실데이터로 전체 파이프라인(수집→RAW→CORE→규칙엔진) `run_demo.bat`
+한방으로 검증 완료:
+- 한화솔루션: F2(영업활동현금흐름 흑자→적자, 6,385억→-6,550억) + F5(차입금 +22.3%) +
+  D2(유상증자 결정 2건) + D5(정정공시 6건, 2건 원공시 연결/4건 "정정 전 공시 없음")
+  → 13점 → `HIGH`
+- 삼성전자: F5(차입금 +40.6%) + D1(단기차입금 증가) + D5(정정공시 10건, 전부 원공시 연결)
+  → 12점 → `HIGH`
 
 ### 변화 탐지 규칙 (`core.rule_catalog`)
 
@@ -99,12 +124,15 @@ F2(영업활동현금흐름 흑자→적자, 6,385억→-6,550억) + F5(차입�
   변형을 추가해야 함.
 - **ECOS 기준금리 통계코드**: `722Y001` / 항목 `0101000`, 일별(`D`) 주기 정상 조회됨.
 - **공시원문 다운로드**: `document.xml` 정상 동작 (zip 바이너리로 수신).
+- **공시원문 형식이 섞여 있음**: 대부분은 ATOC 마커가 붙은 표준 DART XML이라 섹션이 깔끔히
+  나뉘지만, 일부 정정/자율공시(예: 자율공시 정정신고)는 **깨진 HTML(XFORM 템플릿)**로
+  내려와서 strict XML 파서가 터짐. `scripts/dart_xml.py`에 HTML fallback 추가로 해결.
 
 ## 다음 단계
 
 1. ~~PostgreSQL RAW → CORE → MART 스키마~~ 완료
 2. ~~변화 탐지 SQL 룰엔진 (재무 규칙 5개 + 공시 가산 규칙)~~ 완료
-3. OpenAI 해설서 생성 (원문 근거 필수 필드) → `mart.explanation_sentences`
+3. ~~OpenAI 해설서 생성~~ 코드 완성, **OpenAI 크레딧 충전 후 실행 검증 필요**
 4. Power BI 대시보드 연결 (`mart` 스키마를 PostgreSQL 커넥터로 직결, flat 테이블이라
    추가 변환 없이 붙을 수 있음)
 5. n8n: `mart.company_priority` / `mart.change_events` 조회 → 변화 기업 주간 이메일 발송

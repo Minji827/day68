@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: deltawatch
       POSTGRES_DB: deltawatch
     ports:
-      - "5432:5432"
+      - "5433:5432"   # 5432는 다른 랩(finance-postgres)이 이미 점유 중 - 충돌 방지
     volumes:
       - pgdata:/var/lib/postgresql/data
 
