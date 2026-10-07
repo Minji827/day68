@@ -75,6 +75,39 @@ def companies():
         conn.close()
 
 
+@app.delete("/api/companies/{stock_code}")
+def delete_company(stock_code: str):
+    """CORE/MART에서 이 기업 데이터를 전부 지운다. RAW(원본 API 응답 로그)는 감사 추적용이라
+    건드리지 않는다 - 다시 수집하면 동일 raw 레코드가 그대로 재사용된다."""
+    conn = db.get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("SELECT corp_code, corp_name FROM core.companies WHERE stock_code = %s", (stock_code,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, f"종목코드 '{stock_code}' 기업이 없습니다.")
+            corp_code, corp_name = row
+
+            cur.execute(
+                "DELETE FROM mart.explanation_sentences WHERE rcept_no IN "
+                "(SELECT rcept_no FROM core.disclosures WHERE corp_code = %s)",
+                (corp_code,),
+            )
+            cur.execute("DELETE FROM mart.change_events WHERE corp_code = %s", (corp_code,))
+            cur.execute("DELETE FROM mart.company_priority WHERE corp_code = %s", (corp_code,))
+            cur.execute(
+                "DELETE FROM core.disclosure_sections WHERE rcept_no IN "
+                "(SELECT rcept_no FROM core.disclosures WHERE corp_code = %s)",
+                (corp_code,),
+            )
+            cur.execute("DELETE FROM core.disclosures WHERE corp_code = %s", (corp_code,))
+            cur.execute("DELETE FROM core.financial_accounts WHERE corp_code = %s", (corp_code,))
+            cur.execute("DELETE FROM core.companies WHERE corp_code = %s", (corp_code,))
+    finally:
+        conn.close()
+    return {"ok": True, "corp_code": corp_code, "corp_name": corp_name}
+
+
 @app.get("/api/dashboard")
 def dashboard(review_date: str | None = None):
     conn = db.get_conn()
