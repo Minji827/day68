@@ -277,6 +277,22 @@
   const levelLabel = { high: "높음", mid: "중간", low: "낮음", none: "없음" };
   const levelBadgeClass = { high: "badge-high", mid: "badge-mid", low: "badge-low", none: "badge-none" };
 
+  function showError(where, err) {
+    console.error(`[${where}]`, err);
+    let banner = document.getElementById("js-error-banner");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "js-error-banner";
+      banner.style.cssText = "background:#fdeceb;color:#d03b3b;border:1px solid #d03b3b;border-radius:10px;padding:10px 14px;font-size:12px;font-family:monospace;white-space:pre-wrap;";
+      document.querySelector(".main").prepend(banner);
+    }
+    banner.textContent += `[${where}] ${err && err.message ? err.message : err}\n`;
+  }
+  function safe(where, fn) {
+    try { fn(); } catch (err) { showError(where, err); }
+  }
+  window.addEventListener("error", (e) => showError("window", e.error || e.message));
+
   document.querySelectorAll(".nav-item").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
@@ -293,6 +309,8 @@
   }
 
   function renderAll() {
+    const oldBanner = document.getElementById("js-error-banner");
+    if (oldBanner) oldBanner.remove();
     if (!DATA || !DATA.company_priority.length) {
       document.getElementById("kpi-row").innerHTML = '<div class="placeholder" style="grid-column:1/-1">아직 분석된 기업이 없습니다. 위에서 종목코드를 입력하고 "분석 시작"을 눌러주세요.</div>';
       ["rank-chart","trend-chart","sel-summary","fin-top-table","corr-top-table","dist-chart","detail-banner","detail-fin-table","detail-rules","slope-chart","detail-new-table","detail-corr-table","ai-explain"].forEach(id => document.getElementById(id).innerHTML = "");
@@ -311,15 +329,15 @@
     const rankedForSelect = DATA.company_priority.slice().sort((a,b)=>b.priority_score-a.priority_score);
     dCorpSelect.innerHTML = rankedForSelect.map(cp => `<option value="${cp.corp_code}">${esc(cp.corp_name)} (${cbid[cp.corp_code].stock_code})</option>`).join("");
 
-    renderKPIs();
-    renderRankChart();
-    renderTrendChart();
-    renderSummary(rankedForSelect[0].corp_code);
-    renderFinTop();
-    renderCorrTop();
-    renderDistChart();
+    safe("renderKPIs", renderKPIs);
+    safe("renderRankChart", renderRankChart);
+    safe("renderTrendChart", renderTrendChart);
+    safe("renderSummary", () => renderSummary(rankedForSelect[0].corp_code));
+    safe("renderFinTop", renderFinTop);
+    safe("renderCorrTop", renderCorrTop);
+    safe("renderDistChart", renderDistChart);
     document.getElementById("footer-overview").textContent = `검토 기준일: ${fmtDate(reviewDate)} · 상단에서 다시 분석하면 최신화됩니다.`;
-    renderDetail(dCorpSelect.value);
+    safe("renderDetail", () => renderDetail(dCorpSelect.value));
 
     corpSelect.onchange = () => renderSummary(corpSelect.value === "all" ? rankedForSelect[0].corp_code : corpSelect.value);
     dCorpSelect.onchange = () => renderDetail(dCorpSelect.value);
