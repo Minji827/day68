@@ -76,15 +76,23 @@ docker compose up -d
   .venv/Scripts/python scripts/compare_disclosure.py --rcept-no 20260814003672
   ```
 
-**해설서 생성 (OpenAI, FR-05) — 코드 완성, 실행은 보류**
+**해설서 생성 (OpenAI, FR-05) — 실데이터로 검증 완료**
 - `scripts/dart_xml.py` — 공시원문(document.xml) 섹션 파서. **실측으로 두 가지 포맷을
   확인**: 표준 DART XML(ATOC 마커로 섹션 구분)과, 일부 정정/자율공시는 깨진 HTML(XFORM
   템플릿)로 내려옴 — strict XML 파싱이 실패해서 HTML fallback(제목+본문 통짜 1~2섹션)을
   추가함. PRD 11번이 예견한 리스크가 실제로 발생한 케이스.
 - `scripts/explain.py` — 정정공시(+원공시)를 OpenAI에 넘겨 신구 대비 해설 문장 생성,
   근거 발췌가 실제 원문의 부분 문자열인지 검증 후 통과한 것만 `mart.explanation_sentences`에
-  저장 (FR-05 AC: 근거 없는 문장 제외). **OpenAI 계정 크레딧이 없어 실제 호출 검증은 보류**
-  (`insufficient_quota`) — 키 발급/충전 후 `python scripts/explain.py --review-date 2026-01-01`
+  저장 (FR-05 AC: 근거 없는 문장 제외). `collect.py`/`compare_disclosure.py`와 동일하게
+  `--stock-code`로 기업 하나만 지정 가능.
+  **실제 OpenAI 호출로 검증됨**: 생성된 문장 중 원문과 토씨가 안 맞는 건 자동으로
+  REJECTED 처리됨 (예: "2026.06.02 공시 수량이 81에서 34로" — 다른 섹션 수치를 섞어
+  쓴 문장을 실제로 걸러냄). 통과한 문장은 전부 원문 발췌와 정확히 일치.
+
+```bash
+.venv/Scripts/python scripts/compare_disclosure.py --stock-code 005930 --review-date 2026-01-01
+.venv/Scripts/python scripts/explain.py --stock-code 005930 --review-date 2026-01-01
+```
 
 ```bash
 .venv/Scripts/python scripts/collect.py --stock-code 005930 --bgn-de 20250101 --end-de 20261007
@@ -152,10 +160,11 @@ docker compose up -d
 
 1. ~~PostgreSQL RAW → CORE → MART 스키마~~ 완료
 2. ~~변화 탐지 SQL 룰엔진 (재무 규칙 5개 + 공시 가산 규칙)~~ 완료
-3. ~~OpenAI 해설서 생성~~ 코드 완성, **OpenAI 크레딧 충전 후 실행 검증 필요**
-4. Power BI 대시보드 연결 (`mart` 스키마를 PostgreSQL 커넥터로 직결, flat 테이블이라
-   추가 변환 없이 붙을 수 있음)
-5. n8n: `mart.company_priority` / `mart.change_events` 조회 → 변화 기업 주간 이메일 발송
+3. ~~OpenAI 해설서 생성~~ 완료, 실제 호출로 근거 검증까지 확인
+4. ~~Power BI 대시보드 연결~~ 완료 (`mart` 스키마 PostgreSQL 커넥터 직결, `localhost:5433`).
+   동일 레이아웃의 스냅샷 HTML 버전도 있음 (팀 공유/발표용): 대시보드 아티팩트 참고
+5. ~~n8n 워크플로우~~ 완료 (`n8n/deltawatch_weekly_alert.json`, `docker compose`로 기동,
+   `localhost:5680`). Postgres/SMTP 자격증명은 팀원이 직접 입력 필요 (보안상 코드에 안 넣음)
 
 ## 남은 판단 필요 사항 (team decision)
 

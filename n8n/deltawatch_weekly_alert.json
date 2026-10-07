@@ -1,0 +1,89 @@
+{
+  "id": "deltawatch-weekly-alert",
+  "name": "DeltaWatch Weekly Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [1],
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "schedule1",
+      "name": "주간 스케줄 (매주 월 09:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT cp.corp_name, cp.priority_level, cp.priority_score, cp.change_count, string_agg(ce.description, E'\n' ORDER BY ce.weight DESC) AS change_summary FROM mart.company_priority cp JOIN mart.change_events ce ON ce.corp_code = cp.corp_code AND ce.review_date = cp.review_date WHERE cp.review_date = (SELECT max(review_date) FROM mart.company_priority) AND cp.change_count > 0 GROUP BY cp.corp_name, cp.priority_level, cp.priority_score, cp.change_count ORDER BY cp.priority_score DESC",
+        "options": {}
+      },
+      "id": "postgres1",
+      "name": "변화 기업 조회 (mart)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [480, 300],
+      "credentials": {
+        "postgres": {
+          "id": "deltawatch-pg",
+          "name": "DeltaWatch Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const rows = $input.all().map(i => i.json);\nif (rows.length === 0) {\n  return [];\n}\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');\nconst rowsHtml = rows.map(r => `\n  <tr>\n    <td style=\"padding:8px;border:1px solid #ddd;font-weight:bold;\">${esc(r.corp_name)}</td>\n    <td style=\"padding:8px;border:1px solid #ddd;\">${esc(String(r.priority_level).toUpperCase())} (${esc(r.priority_score)}점)</td>\n    <td style=\"padding:8px;border:1px solid #ddd;white-space:pre-line;\">${esc(r.change_summary)}</td>\n  </tr>`).join('');\nconst html = `\n  <h2>DeltaWatch 주간 변화 알림</h2>\n  <table style=\"border-collapse:collapse;width:100%;\">\n    <tr>\n      <th style=\"padding:8px;border:1px solid #ddd;text-align:left;\">기업</th>\n      <th style=\"padding:8px;border:1px solid #ddd;text-align:left;\">우선순위</th>\n      <th style=\"padding:8px;border:1px solid #ddd;text-align:left;\">변화 내용</th>\n    </tr>\n    ${rowsHtml}\n  </table>`;\nreturn [{ json: { html, companyCount: rows.length } }];"
+      },
+      "id": "code1",
+      "name": "이메일 본문 작성 (변화 없으면 중단)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [710, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "deltawatch@example.com",
+        "toEmail": "test-recipient@example.com",
+        "subject": "=DeltaWatch 주간 변화 알림 - {{ $json.companyCount }}개 기업",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "email1",
+      "name": "이메일 발송",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [940, 300],
+      "credentials": {
+        "smtp": {
+          "id": "deltawatch-smtp",
+          "name": "DeltaWatch SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "주간 스케줄 (매주 월 09:00)": {
+      "main": [[{ "node": "변화 기업 조회 (mart)", "type": "main", "index": 0 }]]
+    },
+    "변화 기업 조회 (mart)": {
+      "main": [[{ "node": "이메일 본문 작성 (변화 없으면 중단)", "type": "main", "index": 0 }]]
+    },
+    "이메일 본문 작성 (변화 없으면 중단)": {
+      "main": [[{ "node": "이메일 발송", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

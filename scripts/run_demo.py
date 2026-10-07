@@ -11,20 +11,25 @@ Usage:
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 ROOT = Path(__file__).resolve().parent.parent
 PY = str(ROOT / ".venv" / "Scripts" / "python.exe")
+load_dotenv(ROOT / ".env")
 
 
-def run(step: str, args: list[str]) -> None:
+def run(step: str, args: list[str], allow_fail: bool = False) -> None:
     print(f"\n--- {step} ---")
     result = subprocess.run([PY, *args], cwd=ROOT)
     if result.returncode != 0:
         print(f"\n[실패] {step} (exit {result.returncode})")
-        sys.exit(result.returncode)
+        if not allow_fail:
+            sys.exit(result.returncode)
 
 
 def start_postgres() -> None:
@@ -50,6 +55,15 @@ def main() -> None:
     run("변화 탐지 규칙 실행", ["scripts/run_rules.py", "--review-date", review_date])
     run("결과 출력", ["scripts/show_results.py"])
     run("정정 전후 비교 (AI 없이, 원문 diff)", ["scripts/compare_disclosure.py", *corp_flag, "--review-date", review_date])
+
+    if os.environ.get("OPENAI_API_KEY"):
+        run(
+            "AI 해설서 생성 (OpenAI, 근거 검증 포함)",
+            ["scripts/explain.py", *corp_flag, "--review-date", review_date, "--limit-per-company", "3"],
+            allow_fail=True,
+        )
+    else:
+        print("\n--- AI 해설서 생성 건너뜀 (.env에 OPENAI_API_KEY 없음) ---")
 
     print("\n=== 완료 ===")
 

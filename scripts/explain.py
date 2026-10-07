@@ -148,6 +148,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--review-date", required=True)
     parser.add_argument("--limit-per-company", type=int, default=2)
+    parser.add_argument("--stock-code", help="6자리 종목코드 - 이 기업만 처리 (우선)")
+    parser.add_argument("--corp-code", help="OpenDART corp_code - 이 기업만 처리")
+    parser.add_argument("--corp", help="회사명 부분일치 - 이 기업만 처리 (core.companies에 이미 적재된 기업만)")
     args = parser.parse_args()
 
     if not OPENAI_API_KEY:
@@ -158,6 +161,24 @@ def main() -> None:
     try:
         with conn:
             with conn.cursor() as cur:
+                corp_code = None
+                if args.stock_code:
+                    cur.execute("SELECT corp_code FROM core.companies WHERE stock_code = %s", (args.stock_code,))
+                    row = cur.fetchone()
+                    if not row:
+                        print(f"종목코드 '{args.stock_code}' 기업을 core.companies에서 찾을 수 없습니다 (먼저 수집/적재하세요).")
+                        return
+                    corp_code = row[0]
+                elif args.corp_code:
+                    corp_code = args.corp_code
+                elif args.corp:
+                    cur.execute("SELECT corp_code FROM core.companies WHERE corp_name ILIKE %s", (f"%{args.corp}%",))
+                    rows_ = cur.fetchall()
+                    if len(rows_) != 1:
+                        print(f"'{args.corp}'로 {len(rows_)}개 매칭됨 - --stock-code로 특정하세요.")
+                        return
+                    corp_code = rows_[0][0]
+
                 cur.execute(
                     """
                     SELECT rcept_no, corp_code, report_nm_clean, orig_rcept_no
@@ -167,11 +188,12 @@ def main() -> None:
                         ) AS rn
                         FROM core.disclosures d
                         WHERE is_correction AND rcept_dt > %s
+                          AND (%s::text IS NULL OR corp_code = %s)
                     ) ranked
                     WHERE rn <= %s
                     ORDER BY corp_code, rcept_dt DESC
                     """,
-                    (args.review_date, args.limit_per_company),
+                    (args.review_date, corp_code, corp_code, args.limit_per_company),
                 )
                 targets = [
                     {"rcept_no": r[0], "corp_code": r[1], "report_nm_clean": r[2], "orig_rcept_no": r[3]}
