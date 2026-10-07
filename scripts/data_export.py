@@ -21,13 +21,29 @@ def _rows(cur, query, params=None):
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
-def export_all(cur) -> dict:
+def export_all(cur, review_date: str | None = None) -> dict:
+    """review_date를 안 주면 mart에 있는 가장 최근 검토일 기준으로 보여준다
+    (분석을 서로 다른 날짜로 여러 번 돌리면 결과가 섞여 보이는 걸 방지)."""
+    if review_date is None:
+        cur.execute("SELECT max(review_date) FROM mart.company_priority")
+        row = cur.fetchone()
+        review_date = row[0].isoformat() if row and row[0] else None
+
     return {
+        "review_date": review_date,
         "companies": _rows(cur, "SELECT corp_code, corp_name, stock_code FROM core.companies"),
-        "company_priority": _rows(cur, "SELECT * FROM mart.company_priority ORDER BY priority_score DESC"),
-        "change_events": _rows(cur, "SELECT * FROM mart.change_events ORDER BY corp_name, weight DESC"),
-        "kpi_daily": _rows(cur, "SELECT * FROM mart.kpi_daily ORDER BY review_date DESC"),
-        "rate_context": _rows(cur, "SELECT * FROM mart.rate_context ORDER BY review_date DESC"),
+        "company_priority": _rows(
+            cur,
+            "SELECT * FROM mart.company_priority WHERE review_date = %s ORDER BY priority_score DESC",
+            (review_date,),
+        ),
+        "change_events": _rows(
+            cur,
+            "SELECT * FROM mart.change_events WHERE review_date = %s ORDER BY corp_name, weight DESC",
+            (review_date,),
+        ),
+        "kpi_daily": _rows(cur, "SELECT * FROM mart.kpi_daily WHERE review_date = %s", (review_date,)),
+        "rate_context": _rows(cur, "SELECT * FROM mart.rate_context WHERE review_date = %s", (review_date,)),
         "rate_history": _rows(
             cur,
             "SELECT obs_date, value FROM core.rate_observations WHERE stat_code='722Y001' ORDER BY obs_date",

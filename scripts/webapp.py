@@ -73,11 +73,13 @@ def companies():
 
 
 @app.get("/api/dashboard")
-def dashboard():
+def dashboard(review_date: str | None = None):
     conn = db.get_conn()
     try:
         with conn.cursor() as cur:
-            payload = json.dumps(data_export.export_all(cur), ensure_ascii=False, default=data_export._default)
+            payload = json.dumps(
+                data_export.export_all(cur, review_date), ensure_ascii=False, default=data_export._default
+            )
             return Response(content=payload, media_type="application/json")
     finally:
         conn.close()
@@ -146,6 +148,25 @@ def analyze(req: AnalyzeRequest):
             run_rules.context_rate_vs_borrowings(cur, req.review_date)
             run_rules.aggregate_company_priority(cur, req.review_date)
             run_rules.aggregate_kpi(cur, req.review_date)
+
+            # 변화가 0건이면 aggregate_company_priority가 아예 행을 안 만든다 -
+            # "유의미한 변화 없음"으로 명시적으로 표시한다 (PRD 예외 처리, 조용히 사라지면 안 됨).
+            cur.execute(
+                "SELECT 1 FROM mart.company_priority WHERE corp_code = %s AND review_date = %s",
+                (corp_code, req.review_date),
+            )
+            if not cur.fetchone():
+                cur.execute(
+                    """
+                    INSERT INTO mart.company_priority
+                        (corp_code, corp_name, review_date, priority_level, priority_score,
+                         change_count, financial_rule_count, disclosure_rule_count)
+                    VALUES (%s, %s, %s, 'none', 0, 0, 0, 0)
+                    ON CONFLICT (corp_code, review_date) DO NOTHING
+                    """,
+                    (corp_code, corp["corp_name"], req.review_date),
+                )
+                step(f"  {corp['corp_name']}: 이 검토일 기준 유의미한 변화 없음")
 
             if os.environ.get("OPENAI_API_KEY"):
                 step("AI 해설 생성 중 (OpenAI, 근거 검증 포함)...")

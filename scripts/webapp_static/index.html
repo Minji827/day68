@@ -301,7 +301,7 @@
       return;
     }
     const cbid = companyById();
-    const reviewDate = (DATA.kpi_daily[0] && DATA.kpi_daily[0].review_date) || DATA.company_priority[0].review_date;
+    const reviewDate = DATA.review_date || (DATA.kpi_daily[0] && DATA.kpi_daily[0].review_date) || DATA.company_priority[0].review_date;
     document.getElementById("f-review-date").value = fmtDate(reviewDate);
     document.getElementById("d-review-date").value = fmtDate(reviewDate);
 
@@ -358,7 +358,8 @@
     const max = Math.max(1, ...ranked.map((r) => r.priority_score));
     document.getElementById("rank-chart").innerHTML = ranked.map((r) => {
       const pct = Math.max(6, (r.priority_score / max) * 100);
-      return `<div class="rank-row"><div class="rank-name">${esc(r.corp_name)}</div><div class="rank-track"><div class="rank-fill" style="width:${pct}%; background:${levelColor[r.priority_level]}"></div></div><div class="rank-score num">${r.priority_score}</div></div>`;
+      const scoreLabel = r.priority_level === "none" ? "변화없음" : r.priority_score;
+      return `<div class="rank-row"><div class="rank-name">${esc(r.corp_name)}</div><div class="rank-track"><div class="rank-fill" style="width:${pct}%; background:${levelColor[r.priority_level]}"></div></div><div class="rank-score num" style="width:auto; font-size:10.5px;">${scoreLabel}</div></div>`;
     }).join("");
   }
 
@@ -522,9 +523,11 @@
   }
 
   // ---- data loading ----
-  async function loadDashboard() {
-    const res = await fetch("/api/dashboard");
+  async function loadDashboard(reviewDate) {
+    const url = reviewDate ? `/api/dashboard?review_date=${encodeURIComponent(reviewDate)}` : "/api/dashboard";
+    const res = await fetch(url);
     DATA = await res.json();
+    if (DATA.review_date) document.getElementById("a-review-date").value = DATA.review_date;
     renderAll();
   }
 
@@ -552,7 +555,7 @@
       } else {
         logEl.textContent = data.log.join("\n");
         statusEl.textContent = `완료: ${data.corp_name} (${stockCode})`;
-        await loadDashboard();
+        await loadDashboard(reviewDate);
       }
     } catch (e) {
       statusEl.textContent = "요청 실패: " + e.message;
