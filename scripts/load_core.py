@@ -1,0 +1,224 @@
+"""Transform raw.* -> core.* : dedup, standardize, link corrections to originals.
+
+PRD 9번 CORE 레이어. 핵심 로직:
+- 정정공시 연결: "[기재정정]" 등 접두어를 뗀 제목으로, 같은 기업의 더 이른 공시를 매칭
+  (OpenDART list.json에 원공시 접수번호 필드가 없음을 실측으로 확인했기 때문).
+- 재무계정 표준화: core.account_mapping으로 raw 계정명 -> 표준 계정코드 변환,
+  차입금처럼 쪼개진 계정은 합산.
+"""
+from __future__ import annotations
+
+import re
+import sys
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import db
+import psycopg2.extras
+
+CORRECTION_PREFIX_RE = re.compile(r"^(\[[^\]]*\])+")
+
+
+def clean_title(report_nm: str) -> str:
+    return CORRECTION_PREFIX_RE.sub("", report_nm).strip()
+
+
+def to_decimal(s) -> Decimal | None:
+    if s in (None, "", "-"):
+        return None
+    try:
+        return Decimal(str(s).replace(",", ""))
+    except InvalidOperation:
+        return None
+
+
+def load_companies(cur) -> None:
+    cur.execute(
+        """
+        INSERT INTO core.companies (corp_code, corp_name, stock_code, updated_at)
+        SELECT DISTINCT rc.corp_code, rc.corp_name, NULLIF(rc.stock_code, ''), now()
+        FROM raw.opendart_corp_code rc
+        WHERE rc.corp_code IN (
+            SELECT corp_code FROM raw.opendart_disclosure_calls
+            UNION
+            SELECT corp_code FROM raw.opendart_financial_calls
+        )
+        ON CONFLICT (corp_code) DO UPDATE SET
+            corp_name = EXCLUDED.corp_name,
+            stock_code = EXCLUDED.stock_code,
+            updated_at = now()
+        """
+    )
+    print(f"core.companies: {cur.rowcount}건 upsert")
+
+
+def load_disclosures(cur) -> None:
+    cur.execute("SELECT corp_code, response FROM raw.opendart_disclosure_calls")
+    rows_to_insert = []
+    for corp_code, response in cur.fetchall():
+        for item in response.get("list", []):
+            report_nm = item["report_nm"].strip()
+            rows_to_insert.append(
+                (
+                    item["rcept_no"],
+                    item["corp_code"],
+                    report_nm,
+                    clean_title(report_nm),
+                    "정정" in report_nm,
+                    item["rcept_dt"],
+                    item.get("flr_nm"),
+                    item.get("rm"),
+                )
+            )
+    if not rows_to_insert:
+        print("core.disclosures: 적재할 raw 데이터 없음")
+        return
+
+    psycopg2.extras.execute_values(
+        cur,
+        """
+        INSERT INTO core.disclosures
+            (rcept_no, corp_code, report_nm, report_nm_clean, is_correction, rcept_dt, flr_nm, rm)
+        VALUES %s
+        ON CONFLICT (rcept_no) DO UPDATE SET
+            report_nm = EXCLUDED.report_nm,
+            report_nm_clean = EXCLUDED.report_nm_clean,
+            is_correction = EXCLUDED.is_correction,
+            rcept_dt = EXCLUDED.rcept_dt,
+            flr_nm = EXCLUDED.flr_nm,
+            rm = EXCLUDED.rm
+        """,
+        rows_to_insert,
+        template="(%s, %s, %s, %s, %s, to_date(%s, 'YYYYMMDD'), %s, %s)",
+    )
+    print(f"core.disclosures: {len(rows_to_insert)}건 upsert")
+
+    # 정정공시 -> 원공시 연결: 같은 기업 + 같은 정제 제목 중 가장 가까운 과거 공시
+    cur.execute(
+        """
+        UPDATE core.disclosures d
+        SET orig_rcept_no = m.orig_rcept_no,
+            match_method = 'exact_title'
+        FROM (
+            SELECT DISTINCT ON (c.rcept_no)
+                c.rcept_no,
+                o.rcept_no AS orig_rcept_no
+            FROM core.disclosures c
+            JOIN core.disclosures o
+                ON o.corp_code = c.corp_code
+               AND o.report_nm_clean = c.report_nm_clean
+               AND o.rcept_dt < c.rcept_dt
+               AND o.rcept_no <> c.rcept_no
+            WHERE c.is_correction
+            ORDER BY c.rcept_no, o.rcept_dt DESC
+        ) m
+        WHERE d.rcept_no = m.rcept_no
+        """
+    )
+    linked = cur.rowcount
+    cur.execute(
+        """
+        UPDATE core.disclosures
+        SET match_method = 'unmatched'
+        WHERE is_correction AND orig_rcept_no IS NULL AND match_method IS NULL
+        """
+    )
+    unmatched = cur.rowcount
+    print(f"정정공시 원공시 연결: {linked}건 매칭, {unmatched}건 미매칭(정정 전 공시 없음)")
+
+
+def load_financial_accounts(cur) -> None:
+    cur.execute("SELECT account_nm_raw, account_std_code, account_std_name, agg_method FROM core.account_mapping")
+    mapping: dict[str, list[tuple[str, str, str]]] = {}
+    for raw_nm, std_code, std_name, agg_method in cur.fetchall():
+        mapping.setdefault(raw_nm, []).append((std_code, std_name, agg_method))
+
+    cur.execute("SELECT corp_code, bsns_year, reprt_code, fs_div, response FROM raw.opendart_financial_calls")
+    agg: dict[tuple, dict] = {}
+    for corp_code, bsns_year, reprt_code, fs_div, response in cur.fetchall():
+        for item in response.get("list", []):
+            account_nm = item.get("account_nm", "").strip()
+            if account_nm not in mapping:
+                continue
+            thstrm = to_decimal(item.get("thstrm_amount"))
+            frmtrm = to_decimal(item.get("frmtrm_amount"))
+            for std_code, std_name, agg_method in mapping[account_nm]:
+                key = (corp_code, bsns_year, reprt_code, fs_div, std_code)
+                if key not in agg:
+                    agg[key] = {"std_name": std_name, "thstrm": thstrm or Decimal(0), "frmtrm": frmtrm or Decimal(0)}
+                else:
+                    agg[key]["thstrm"] += thstrm or Decimal(0)
+                    agg[key]["frmtrm"] += frmtrm or Decimal(0)
+
+    rows = [
+        (corp_code, bsns_year, reprt_code, fs_div, std_code, v["std_name"], v["thstrm"], v["frmtrm"])
+        for (corp_code, bsns_year, reprt_code, fs_div, std_code), v in agg.items()
+    ]
+    if not rows:
+        print("core.financial_accounts: 적재할 매핑 데이터 없음")
+        return
+    psycopg2.extras.execute_values(
+        cur,
+        """
+        INSERT INTO core.financial_accounts
+            (corp_code, bsns_year, reprt_code, fs_div, account_std_code, account_std_name,
+             thstrm_amount, frmtrm_amount)
+        VALUES %s
+        ON CONFLICT (corp_code, bsns_year, reprt_code, fs_div, account_std_code) DO UPDATE SET
+            thstrm_amount = EXCLUDED.thstrm_amount,
+            frmtrm_amount = EXCLUDED.frmtrm_amount
+        """,
+        rows,
+    )
+    print(f"core.financial_accounts: {len(rows)}건 upsert")
+
+
+def load_rate_observations(cur) -> None:
+    cur.execute("SELECT stat_code, item_code, response FROM raw.ecos_rate_calls")
+    rows = []
+    for stat_code, item_code, response in cur.fetchall():
+        for r in response:
+            rows.append(
+                (
+                    r["STAT_CODE"],
+                    r["ITEM_CODE1"],
+                    r["TIME"],
+                    to_decimal(r["DATA_VALUE"]),
+                    r.get("UNIT_NAME"),
+                )
+            )
+    if not rows:
+        print("core.rate_observations: 적재할 raw 데이터 없음")
+        return
+    psycopg2.extras.execute_values(
+        cur,
+        """
+        INSERT INTO core.rate_observations (stat_code, item_code, obs_date, value, unit)
+        VALUES %s
+        ON CONFLICT (stat_code, item_code, obs_date) DO UPDATE SET
+            value = EXCLUDED.value, unit = EXCLUDED.unit
+        """,
+        rows,
+        template="(%s, %s, to_date(%s, 'YYYYMMDD'), %s, %s)",
+    )
+    print(f"core.rate_observations: {len(rows)}건 upsert")
+
+
+def main() -> None:
+    conn = db.get_conn()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                load_companies(cur)
+                load_disclosures(cur)
+                load_financial_accounts(cur)
+                load_rate_observations(cur)
+        print("OK")
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()

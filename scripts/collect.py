@@ -1,0 +1,102 @@
+"""RAW layer collector: pulls OpenDART + ECOS data and dumps raw responses to disk,
+matching PRD section 9 (RAW = API 응답 원본을 그대로 저장).
+
+Usage:
+    python scripts/collect.py --corp 삼성전자 --bgn-de 20250101 --end-de 20261007
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import ecos_client
+import opendart_client
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
+
+
+def _write_json(path: Path, data) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"  -> {path.relative_to(DATA_DIR.parent.parent)} ({path.stat().st_size} bytes)")
+
+
+def collect_disclosures(corp_code: str, bgn_de: str, end_de: str) -> list[dict]:
+    print(f"[disclosures] {corp_code} {bgn_de}~{end_de}")
+    data = opendart_client.get_disclosure_list(corp_code, bgn_de, end_de, page_count=100)
+    items = data.get("list", [])
+    _write_json(DATA_DIR / "disclosures" / f"{corp_code}_{bgn_de}_{end_de}.json", data)
+    return items
+
+
+def collect_financials(corp_code: str, bsns_years: list[str], reprt_code: str = "11011") -> None:
+    for year in bsns_years:
+        for fs_div in ("CFS", "OFS"):
+            print(f"[financials] {corp_code} {year} {reprt_code} {fs_div}")
+            try:
+                data = opendart_client.get_financial_statements(
+                    corp_code, year, reprt_code=reprt_code, fs_div=fs_div
+                )
+            except opendart_client.OpenDartError as e:
+                print(f"  SKIP ({e})")
+                continue
+            _write_json(
+                DATA_DIR / "financials" / f"{corp_code}_{year}_{reprt_code}_{fs_div}.json", data
+            )
+
+
+def collect_documents(rcept_nos: list[str]) -> None:
+    out_dir = DATA_DIR / "documents"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for rcept_no in rcept_nos:
+        print(f"[document] {rcept_no}")
+        try:
+            content = opendart_client.get_document_original(rcept_no)
+        except opendart_client.OpenDartError as e:
+            print(f"  SKIP ({e})")
+            continue
+        path = out_dir / f"{rcept_no}.zip"
+        path.write_bytes(content)
+        print(f"  -> {path.relative_to(DATA_DIR.parent.parent)} ({len(content)} bytes)")
+
+
+def collect_base_rate(start: str, end: str, cycle: str = "D") -> None:
+    print(f"[ecos base rate] {start}~{end} ({cycle})")
+    rows = ecos_client.get_base_rate(start, end, cycle=cycle)
+    _write_json(DATA_DIR / "ecos" / f"base_rate_{cycle}_{start}_{end}.json", rows)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--corp", required=True, help="회사명 (부분일치 허용, 상장사 우선)")
+    parser.add_argument("--bgn-de", default="20250101")
+    parser.add_argument("--end-de", default=date.today().strftime("%Y%m%d"))
+    parser.add_argument("--years", nargs="*", default=["2024", "2025"], help="재무제표 사업연도")
+    parser.add_argument("--skip-documents", action="store_true")
+    args = parser.parse_args()
+
+    matches = opendart_client.find_corp_code(args.corp)
+    listed = [m for m in matches if m["stock_code"]]
+    if not listed:
+        print(f"'{args.corp}' 상장사 매칭 실패. 후보: {matches[:5]}")
+        return
+    corp = listed[0]
+    print(f"대상 기업: {corp}")
+    corp_code = corp["corp_code"]
+
+    items = collect_disclosures(corp_code, args.bgn_de, args.end_de)
+    collect_financials(corp_code, args.years)
+    if not args.skip_documents and items:
+        rcept_nos = [it["rcept_no"] for it in items[:5]]
+        collect_documents(rcept_nos)
+    collect_base_rate(args.bgn_de, args.end_de, cycle="D")
+    print("\nDONE")
+
+
+if __name__ == "__main__":
+    main()
