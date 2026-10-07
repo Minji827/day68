@@ -34,7 +34,7 @@ def to_decimal(s) -> Decimal | None:
         return None
 
 
-def load_companies(cur) -> None:
+def load_companies(cur, corp_code: str | None = None) -> None:
     cur.execute(
         """
         INSERT INTO core.companies (corp_code, corp_name, stock_code, updated_at)
@@ -45,17 +45,22 @@ def load_companies(cur) -> None:
             UNION
             SELECT corp_code FROM raw.opendart_financial_calls
         )
+        AND (%(corp_code)s IS NULL OR rc.corp_code = %(corp_code)s)
         ON CONFLICT (corp_code) DO UPDATE SET
             corp_name = EXCLUDED.corp_name,
             stock_code = EXCLUDED.stock_code,
             updated_at = now()
-        """
+        """,
+        {"corp_code": corp_code},
     )
     print(f"core.companies: {cur.rowcount}건 upsert")
 
 
-def load_disclosures(cur) -> None:
-    cur.execute("SELECT corp_code, response FROM raw.opendart_disclosure_calls")
+def load_disclosures(cur, corp_code: str | None = None) -> None:
+    if corp_code:
+        cur.execute("SELECT corp_code, response FROM raw.opendart_disclosure_calls WHERE corp_code = %s", (corp_code,))
+    else:
+        cur.execute("SELECT corp_code, response FROM raw.opendart_disclosure_calls")
     rows_to_insert = []
     for corp_code, response in cur.fetchall():
         for item in response.get("list", []):
@@ -169,13 +174,19 @@ def load_disclosures(cur) -> None:
     )
 
 
-def load_financial_accounts(cur) -> None:
+def load_financial_accounts(cur, corp_code: str | None = None) -> None:
     cur.execute("SELECT account_nm_raw, account_std_code, account_std_name, agg_method FROM core.account_mapping")
     mapping: dict[str, list[tuple[str, str, str]]] = {}
     for raw_nm, std_code, std_name, agg_method in cur.fetchall():
         mapping.setdefault(raw_nm, []).append((std_code, std_name, agg_method))
 
-    cur.execute("SELECT corp_code, bsns_year, reprt_code, fs_div, response FROM raw.opendart_financial_calls")
+    if corp_code:
+        cur.execute(
+            "SELECT corp_code, bsns_year, reprt_code, fs_div, response FROM raw.opendart_financial_calls WHERE corp_code = %s",
+            (corp_code,),
+        )
+    else:
+        cur.execute("SELECT corp_code, bsns_year, reprt_code, fs_div, response FROM raw.opendart_financial_calls")
     agg: dict[tuple, dict] = {}
     for corp_code, bsns_year, reprt_code, fs_div, response in cur.fetchall():
         for item in response.get("list", []):

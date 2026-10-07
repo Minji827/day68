@@ -45,34 +45,38 @@ def load_corp_code(cur) -> None:
     print(f"raw.opendart_corp_code: {len(rows)}건 upsert")
 
 
-def load_disclosure_calls(cur) -> None:
+def load_disclosure_calls(cur, corp_code: str | None = None) -> None:
     pattern = re.compile(r"^(\d+)_(\d{8})_(\d{8})\.json$")
     n = 0
     for f in (DATA_DIR / "disclosures").glob("*.json"):
         m = pattern.match(f.name)
         if not m:
             continue
-        corp_code, bgn_de, end_de = m.groups()
+        file_corp_code, bgn_de, end_de = m.groups()
+        if corp_code and file_corp_code != corp_code:
+            continue
         response = json.loads(f.read_text(encoding="utf-8"))
         cur.execute(
             """
             INSERT INTO raw.opendart_disclosure_calls (corp_code, bgn_de, end_de, response)
             VALUES (%s, %s, %s, %s)
             """,
-            (corp_code, bgn_de, end_de, json.dumps(response, ensure_ascii=False)),
+            (file_corp_code, bgn_de, end_de, json.dumps(response, ensure_ascii=False)),
         )
         n += 1
     print(f"raw.opendart_disclosure_calls: {n}건 insert")
 
 
-def load_financial_calls(cur) -> None:
+def load_financial_calls(cur, corp_code: str | None = None) -> None:
     pattern = re.compile(r"^(\d+)_(\d{4})_(\d+)_(CFS|OFS)\.json$")
     n = 0
     for f in (DATA_DIR / "financials").glob("*.json"):
         m = pattern.match(f.name)
         if not m:
             continue
-        corp_code, bsns_year, reprt_code, fs_div = m.groups()
+        file_corp_code, bsns_year, reprt_code, fs_div = m.groups()
+        if corp_code and file_corp_code != corp_code:
+            continue
         response = json.loads(f.read_text(encoding="utf-8"))
         cur.execute(
             """
@@ -80,7 +84,7 @@ def load_financial_calls(cur) -> None:
                 (corp_code, bsns_year, reprt_code, fs_div, response)
             VALUES (%s, %s, %s, %s, %s)
             """,
-            (corp_code, bsns_year, reprt_code, fs_div, json.dumps(response, ensure_ascii=False)),
+            (file_corp_code, bsns_year, reprt_code, fs_div, json.dumps(response, ensure_ascii=False)),
         )
         n += 1
     print(f"raw.opendart_financial_calls: {n}건 insert")

@@ -163,15 +163,15 @@ def analyze(req: AnalyzeRequest):
         with conn, conn.cursor() as cur:
             step("RAW 적재 중...")
             load_raw.load_corp_code(cur)
-            load_raw.load_disclosure_calls(cur)
-            load_raw.load_financial_calls(cur)
+            load_raw.load_disclosure_calls(cur, corp_code=corp_code)
+            load_raw.load_financial_calls(cur, corp_code=corp_code)
             load_raw.load_document_files(cur)
             load_raw.load_ecos_calls(cur)
 
             step("CORE 변환 중 (정정공시 연결, 계정 표준화)...")
-            load_core.load_companies(cur)
-            load_core.load_disclosures(cur)
-            load_core.load_financial_accounts(cur)
+            load_core.load_companies(cur, corp_code=corp_code)
+            load_core.load_disclosures(cur, corp_code=corp_code)
+            load_core.load_financial_accounts(cur, corp_code=corp_code)
             load_core.load_rate_observations(cur)
 
             step("변화 탐지 규칙 실행 중...")
