@@ -16,6 +16,32 @@ cp .env.example .env   # OPENDART_API_KEY / ECOS_API_KEY / OPENAI_API_KEY / DATA
 
 `.env`는 git에 커밋되지 않습니다 (`.gitignore` 처리).
 
+### 진짜 라이브 웹앱: `run_webapp.bat`
+
+**claude.ai 아티팩트(공유 링크로 보여줬던 대시보드)는 CSP 때문에 외부 서버를 호출할 수
+없어서, 종목코드를 입력하면 그 자리에서 실시간 분석하는 건 구조적으로 불가능하다.** 그래서
+대신 로컬 웹서버를 만들었다 — `http://localhost`는 CSP 제약이 없어서 진짜로 된다.
+
+```
+run_webapp.bat
+```
+→ `http://localhost:8900` 접속. 상단 입력창에 종목코드(예: `066570`)를 넣고 "분석 시작"을
+누르면, 그 자리에서 OpenDART 수집 → DB 적재(RAW→CORE) → 변화 탐지 규칙 → (OpenAI 키가
+있으면) AI 해설 생성까지 실시간으로 돌고, 완료되면 대시보드가 바로 갱신된다.
+**LG전자(066570)로 실제 검증 완료** — 한 번도 수집한 적 없는 기업을 API 호출 한 번으로
+수집부터 AI 해설까지 전부 라이브로 처리함.
+
+- `scripts/webapp.py` — FastAPI 백엔드. `scripts/collect.py`/`load_raw.py`/`load_core.py`/
+  `run_rules.py`/`explain.py`의 함수를 그대로 import해서 재사용 (subprocess 아님, DB
+  커넥션 공유)
+- `scripts/webapp_static/index.html` — 프론트엔드 (디자인은 claude.ai 대시보드와 동일,
+  데이터만 `fetch`로 받아옴)
+- `scripts/data_export.py` — `mart`/`core` 데이터를 JSON으로 뽑는 공용 함수 (API와 과거
+  수동 export 스크립트가 공유)
+
+claude.ai 링크로 팀원과 공유하려면 기존 아티팩트(스냅샷)를 계속 쓰고, **직접 조작하면서
+실시간으로 보려면 이 로컬 웹앱**을 쓰면 된다. Postgres/Docker가 떠 있는 동안만 작동한다.
+
 ### 가장 쉬운 방법: `run_demo.bat`
 
 Docker Desktop(이미 설치되어 있음) 기동 → 스키마 적용 → 샘플 기업 수집 → RAW/CORE

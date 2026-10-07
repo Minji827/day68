@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeltaWatch 모니터링</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f9f9f7; --surface: #fcfcfb; --surface-raised: #ffffff;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+    --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11,11,11,0.10);
+    --brand: #2a78d6; --brand-ink: #184f95;
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+    --critical-bg: #fdeceb; --warning-bg: #fef6e3; --good-bg: #e8f8e8; --muted-bg: #efeeea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0d0d0d; --surface: #1a1a19; --surface-raised: #212120;
+      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+      --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
+      --brand: #3987e5; --brand-ink: #86b6ef;
+      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+      --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #e66767;
+      --critical-bg: #3a1f1f; --warning-bg: #352c15; --good-bg: #163316; --muted-bg: #242422;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0d0d0d; --surface: #1a1a19; --surface-raised: #212120;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
+    --brand: #3987e5; --brand-ink: #86b6ef;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #e66767;
+    --critical-bg: #3a1f1f; --warning-bg: #352c15; --good-bg: #163316; --muted-bg: #242422;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text-primary);
+    font-family: "IBM Plex Sans KR", "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0; padding: 16px;
+  }
+  .num, .tabular { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  .app { display: flex; max-width: 1400px; margin: 0 auto; gap: 20px; align-items: flex-start; }
+  .sidebar { width: 208px; flex-shrink: 0; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 18px 14px; position: sticky; top: 16px; }
+  .brand { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
+  .brand-mark { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, var(--brand), var(--series-3)); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .brand-mark svg { width: 17px; height: 17px; }
+  .brand-name { font-weight: 700; font-size: 15px; line-height: 1.2; letter-spacing: -0.01em; }
+  .brand-sub { font-size: 11px; color: var(--text-muted); margin: 2px 0 18px 39px; }
+  .nav { display: flex; flex-direction: column; gap: 3px; }
+  .nav-item { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; font-weight: 500; color: var(--text-secondary); cursor: pointer; border: none; background: none; text-align: left; width: 100%; font-family: inherit; }
+  .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; opacity: 0.75; }
+  .nav-item:hover { background: var(--muted-bg); }
+  .nav-item.active { background: var(--brand); color: #fff; }
+  .nav-item.active svg { opacity: 1; }
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+
+  .analyze-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; }
+  .analyze-bar input[type=text] { font-family: "IBM Plex Mono", monospace; font-size: 14px; font-weight: 600; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); width: 140px; }
+  .analyze-bar input[type=date] { font-family: inherit; font-size: 13px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); }
+  .btn-primary { font-family: inherit; font-size: 13.5px; font-weight: 700; padding: 9px 18px; border-radius: 8px; border: none; background: var(--brand); color: #fff; cursor: pointer; }
+  .btn-primary:disabled { opacity: 0.55; cursor: default; }
+  .analyze-status { font-size: 12px; color: var(--text-muted); flex: 1; min-width: 160px; }
+  .analyze-log { width: 100%; max-height: 0; overflow: hidden; transition: max-height 0.2s; font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--text-secondary); background: var(--muted-bg); border-radius: 8px; white-space: pre-wrap; }
+  .analyze-log.open { max-height: 220px; overflow-y: auto; padding: 10px 12px; margin-top: 4px; }
+
+  .page-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
+  .page-title { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+  .page-tagline { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+  .filters { display: flex; gap: 18px; flex-wrap: wrap; }
+  .filter { display: flex; flex-direction: column; gap: 4px; }
+  .filter label { font-size: 10.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .filter select, .filter input { font-family: inherit; font-size: 12.5px; padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); min-width: 108px; }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .kpi-card { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .kpi-top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .kpi-icon { width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .kpi-icon svg { width: 15px; height: 15px; }
+  .kpi-label { font-size: 11.5px; color: var(--text-secondary); font-weight: 600; }
+  .kpi-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+  .kpi-value sub { font-size: 12px; font-weight: 500; color: var(--text-muted); margin-left: 2px; }
+  .kpi-delta { font-size: 11px; color: var(--text-muted); }
+
+  .grid-3 { display: grid; grid-template-columns: 1.1fr 1.3fr 1fr; gap: 14px; align-items: stretch; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .panel { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .panel-title { font-size: 13.5px; font-weight: 700; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+  .rank-row { display: flex; align-items: center; gap: 10px; }
+  .rank-name { width: 84px; flex-shrink: 0; font-size: 12px; font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-track { flex: 1; height: 16px; background: var(--muted-bg); border-radius: 4px; position: relative; overflow: hidden; }
+  .rank-fill { height: 100%; border-radius: 4px 0 0 4px; }
+  .rank-score { width: 28px; flex-shrink: 0; font-size: 11.5px; font-weight: 700; text-align: left; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead th { text-align: left; font-size: 10.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; padding: 0 8px 7px; border-bottom: 1px solid var(--grid); }
+  tbody td { padding: 7px 8px; border-bottom: 1px solid var(--grid); color: var(--text-secondary); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  .table-wrap { overflow-x: auto; }
+  td.name-cell { color: var(--text-primary); font-weight: 600; }
+  td.num-cell { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .delta-up { color: var(--critical); font-weight: 600; }
+  .delta-down { color: var(--good); font-weight: 600; }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; }
+  .badge-high { background: var(--critical-bg); color: var(--critical); }
+  .badge-mid { background: var(--warning-bg); color: #9a6a00; }
+  .badge-low { background: var(--good-bg); color: var(--good); }
+  .badge-none { background: var(--muted-bg); color: var(--text-muted); }
+  .rule-chip { display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--muted-bg); color: var(--text-secondary); font-family: "IBM Plex Mono", monospace; }
+  a.dart-link { color: var(--brand); text-decoration: none; font-weight: 600; font-size: 11.5px; white-space: nowrap; }
+  a.dart-link:hover { text-decoration: underline; }
+
+  .summary-card { display: flex; flex-direction: column; gap: 12px; }
+  .summary-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .summary-id .corp { font-size: 15px; font-weight: 700; }
+  .summary-id .code { font-size: 11.5px; color: var(--text-muted); font-family: "IBM Plex Mono", monospace; }
+  .summary-stats { display: flex; flex-direction: column; gap: 7px; font-size: 12px; }
+  .summary-stats .row { display: flex; justify-content: space-between; color: var(--text-secondary); }
+  .summary-stats .row b { color: var(--text-primary); font-family: "IBM Plex Mono", monospace; }
+  .summary-rules { display: flex; gap: 5px; flex-wrap: wrap; }
+  .summary-bullets { font-size: 11.5px; color: var(--text-secondary); line-height: 1.55; padding-left: 16px; margin: 0; }
+  .summary-bullets li { margin-bottom: 4px; }
+  .footer-bar { font-size: 11px; color: var(--text-muted); text-align: right; padding: 2px 4px; }
+  select.company-select { font-family: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); }
+  .detail-banner { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
+  .detail-banner .stat { display: flex; flex-direction: column; gap: 2px; }
+  .detail-banner .stat .v { font-size: 17px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+  .detail-banner .stat .l { font-size: 10.5px; color: var(--text-muted); }
+  .detail-banner .divider { width: 1px; height: 30px; background: var(--grid); }
+  .rule-card { display: flex; gap: 10px; align-items: flex-start; background: var(--muted-bg); border-radius: 9px; padding: 10px 12px; }
+  .rule-card .rule-chip { flex-shrink: 0; margin-top: 1px; }
+  .rule-card .desc { font-size: 11.5px; color: var(--text-secondary); line-height: 1.4; }
+  svg.chart text { fill: var(--text-muted); font-size: 10px; font-family: "IBM Plex Mono", monospace; }
+  svg.chart .axis-line { stroke: var(--baseline); stroke-width: 1; }
+  svg.chart .grid-line { stroke: var(--grid); stroke-width: 1; }
+  .view { display: none; flex-direction: column; gap: 16px; }
+  .view.active { display: flex; }
+  .empty-note { font-size: 11.5px; color: var(--text-muted); font-style: italic; padding: 10px 2px; }
+  .ai-group { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; }
+  .ai-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .ai-group-title { font-size: 12.5px; font-weight: 700; }
+  .ai-group-date { font-size: 11px; color: var(--text-muted); font-family: "IBM Plex Mono", monospace; }
+  .ai-sentence { display: flex; gap: 9px; align-items: flex-start; }
+  .ai-sentence .mark { width: 16px; height: 16px; border-radius: 50%; background: var(--good-bg); color: var(--good); flex-shrink: 0; display:flex; align-items:center; justify-content:center; margin-top: 1px; }
+  .ai-sentence .mark svg { width: 10px; height: 10px; }
+  .ai-sentence .body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .ai-sentence .text { font-size: 12.5px; color: var(--text-primary); line-height: 1.5; }
+  .ai-sentence .quote { font-size: 11px; color: var(--text-secondary); background: var(--muted-bg); border-left: 2.5px solid var(--brand); padding: 5px 9px; border-radius: 0 6px 6px 0; line-height: 1.45; font-family: "IBM Plex Mono", monospace; }
+  .ai-sentence .quote .src { color: var(--text-muted); font-weight: 600; margin-right: 5px; }
+  .placeholder { text-align: center; padding: 60px 20px; color: var(--text-muted); font-size: 13px; }
+
+  @media (max-width: 980px) {
+    .app { flex-direction: column; }
+    .sidebar { width: 100%; position: static; display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
+    .brand-sub { display: none; }
+    .nav { flex-direction: row; flex: 1; }
+    .nav-item { justify-content: center; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: 1fr; }
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M3 17L9 11L13 15L21 6" stroke="white" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 6H15M21 6V12" stroke="white" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="brand-name">DeltaWatch AI</div>
+    </div>
+    <div class="brand-sub">기업 변화 모니터링 (로컬 라이브)</div>
+    <nav class="nav">
+      <button class="nav-item active" data-view="overview"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="9" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="5" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="14" y="12" width="7" height="9" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="3" y="16" width="7" height="5" rx="1.5" stroke="currentColor" stroke-width="2"/></svg>전체 모니터링</button>
+      <button class="nav-item" data-view="detail"><svg viewBox="0 0 24 24" fill="none"><path d="M9 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M13 3h8v8M21 3L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>기업 상세 분석</button>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="analyze-bar">
+      <input type="text" id="a-stock-code" placeholder="종목코드 (예: 005930)" maxlength="6">
+      <input type="date" id="a-review-date" value="2026-01-01">
+      <button class="btn-primary" id="a-run">분석 시작</button>
+      <div class="analyze-status" id="a-status">종목코드를 입력하면 OpenDART에서 실시간으로 수집 → 분석 → AI 해설까지 실행합니다.</div>
+    </div>
+    <pre class="analyze-log" id="a-log"></pre>
+
+    <section class="view active" id="view-overview">
+      <div class="page-header">
+        <div>
+          <div class="page-title">DeltaWatch AI — 기업 변화 모니터링</div>
+          <div class="page-tagline">전체를 다시 읽지 말고, 이번에 달라진 것부터.</div>
+        </div>
+        <div class="filters">
+          <div class="filter"><label>검토 기준일</label><input id="f-review-date" type="text" readonly></div>
+          <div class="filter"><label>기업</label><select id="f-corp"><option value="all">전체</option></select></div>
+        </div>
+      </div>
+      <div class="kpi-row" id="kpi-row"></div>
+      <div class="grid-3">
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">기업별 재검토 우선순위</div>
+            <div class="legend"><div class="legend-item"><span class="legend-dot" style="background:var(--critical)"></span>높음</div><div class="legend-item"><span class="legend-dot" style="background:var(--warning)"></span>중간</div><div class="legend-item"><span class="legend-dot" style="background:var(--good)"></span>낮음</div></div>
+          </div>
+          <div id="rank-chart" style="display:flex; flex-direction:column; gap:9px;"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">최근 공시 발생 추이 (주간)</div>
+            <div class="legend"><div class="legend-item"><span class="legend-dot" style="background:var(--series-1)"></span>신규 공시</div><div class="legend-item"><span class="legend-dot" style="background:var(--critical)"></span>정정 공시</div></div>
+          </div>
+          <div id="trend-chart"></div>
+        </div>
+        <div class="panel summary-card" id="sel-summary"></div>
+      </div>
+      <div class="grid-2">
+        <div class="panel"><div class="panel-head"><div class="panel-title" id="fin-top-title">주요 재무 변화</div></div><div class="table-wrap"><table id="fin-top-table"></table></div></div>
+        <div class="panel"><div class="panel-head"><div class="panel-title" id="corr-top-title">정정 공시</div></div><div class="table-wrap"><table id="corr-top-table"></table></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">기업별 변화 유형 분포</div>
+          <div class="legend"><div class="legend-item"><span class="legend-dot" style="background:var(--series-1)"></span>재무 변화</div><div class="legend-item"><span class="legend-dot" style="background:var(--series-2)"></span>공시 변화(신규+정정)</div></div>
+        </div>
+        <div id="dist-chart" style="display:flex; flex-direction:column; gap:10px;"></div>
+      </div>
+      <div class="footer-bar" id="footer-overview"></div>
+    </section>
+
+    <section class="view" id="view-detail">
+      <div class="page-header">
+        <div><div class="page-title">기업 상세 분석</div><div class="page-tagline">선택한 기업의 변경사항을 상세히 확인할 수 있습니다.</div></div>
+        <div class="filters"><div class="filter"><label>기업 선택</label><select id="d-corp" class="company-select"></select></div><div class="filter"><label>검토 기준일</label><input id="d-review-date" type="text" readonly></div></div>
+      </div>
+      <div class="detail-banner" id="detail-banner"></div>
+      <div class="grid-2">
+        <div class="panel"><div class="panel-head"><div class="panel-title">주요 재무 변화</div></div><div class="table-wrap"><table id="detail-fin-table"></table></div></div>
+        <div class="panel"><div class="panel-head"><div class="panel-title">적용된 Rule</div></div><div style="display:flex; flex-direction:column; gap:8px;" id="detail-rules"></div></div>
+      </div>
+      <div class="panel"><div class="panel-head"><div class="panel-title">연도별 주요 지표 추이 (매출액 · 영업이익 · 영업활동현금흐름)</div></div><div id="slope-chart"></div></div>
+      <div class="grid-2">
+        <div class="panel"><div class="panel-head"><div class="panel-title" id="d-new-title">신규 공시 목록</div></div><div class="table-wrap"><table id="detail-new-table"></table></div></div>
+        <div class="panel"><div class="panel-head"><div class="panel-title" id="d-corr-title">정정 공시 신구 대비</div></div><div class="table-wrap"><table id="detail-corr-table"></table></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">AI 해설 — 정정공시 신구 대비 (OpenAI)</div>
+          <div class="legend"><div class="legend-item"><span class="legend-dot" style="background:var(--good)"></span>원문 발췌와 대조 검증됨</div></div>
+        </div>
+        <div id="ai-explain" style="display:flex; flex-direction:column; gap:10px;"></div>
+      </div>
+      <div class="footer-bar" id="footer-detail"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  let DATA = null;
+  const fmtNum = (n) => n == null ? "—" : Math.round(n).toLocaleString("ko-KR");
+  const fmtPct = (n) => n == null ? "—" : (n >= 0 ? "+" : "") + (n * 100).toFixed(1) + "%";
+  const fmtDate = (s) => s ? s.replace(/-/g, ".") : "—";
+  const dartUrl = (rcept) => `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rcept}`;
+  const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const levelColor = { high: "var(--critical)", mid: "var(--warning)", low: "var(--good)", none: "var(--text-muted)" };
+  const levelLabel = { high: "높음", mid: "중간", low: "낮음", none: "없음" };
+  const levelBadgeClass = { high: "badge-high", mid: "badge-mid", low: "badge-low", none: "badge-none" };
+
+  document.querySelectorAll(".nav-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+      document.getElementById("view-" + btn.dataset.view).classList.add("active");
+    });
+  });
+
+  function companyById() {
+    const m = {};
+    DATA.companies.forEach((c) => { m[c.corp_code] = c; });
+    return m;
+  }
+
+  function renderAll() {
+    if (!DATA || !DATA.company_priority.length) {
+      document.getElementById("kpi-row").innerHTML = '<div class="placeholder" style="grid-column:1/-1">아직 분석된 기업이 없습니다. 위에서 종목코드를 입력하고 "분석 시작"을 눌러주세요.</div>';
+      ["rank-chart","trend-chart","sel-summary","fin-top-table","corr-top-table","dist-chart","detail-banner","detail-fin-table","detail-rules","slope-chart","detail-new-table","detail-corr-table","ai-explain"].forEach(id => document.getElementById(id).innerHTML = "");
+      document.getElementById("f-corp").innerHTML = '<option value="all">전체</option>';
+      document.getElementById("d-corp").innerHTML = "";
+      return;
+    }
+    const cbid = companyById();
+    const reviewDate = (DATA.kpi_daily[0] && DATA.kpi_daily[0].review_date) || DATA.company_priority[0].review_date;
+    document.getElementById("f-review-date").value = fmtDate(reviewDate);
+    document.getElementById("d-review-date").value = fmtDate(reviewDate);
+
+    const corpSelect = document.getElementById("f-corp");
+    corpSelect.innerHTML = '<option value="all">전체</option>' + DATA.company_priority.map(cp => `<option value="${cp.corp_code}">${esc(cp.corp_name)}</option>`).join("");
+    const dCorpSelect = document.getElementById("d-corp");
+    const rankedForSelect = DATA.company_priority.slice().sort((a,b)=>b.priority_score-a.priority_score);
+    dCorpSelect.innerHTML = rankedForSelect.map(cp => `<option value="${cp.corp_code}">${esc(cp.corp_name)} (${cbid[cp.corp_code].stock_code})</option>`).join("");
+
+    renderKPIs();
+    renderRankChart();
+    renderTrendChart();
+    renderSummary(rankedForSelect[0].corp_code);
+    renderFinTop();
+    renderCorrTop();
+    renderDistChart();
+    document.getElementById("footer-overview").textContent = `검토 기준일: ${fmtDate(reviewDate)} · 상단에서 다시 분석하면 최신화됩니다.`;
+    renderDetail(dCorpSelect.value);
+
+    corpSelect.onchange = () => renderSummary(corpSelect.value === "all" ? rankedForSelect[0].corp_code : corpSelect.value);
+    dCorpSelect.onchange = () => renderDetail(dCorpSelect.value);
+  }
+
+  function renderKPIs() {
+    const nonCorrection = DATA.disclosures.filter((d) => !d.is_correction).length;
+    const corrections = DATA.disclosures.filter((d) => d.is_correction).length;
+    const financialEvents = DATA.change_events.filter((e) => e.change_type === "financial").length;
+    const changedCompanies = DATA.company_priority.filter((c) => c.change_count > 0).length;
+    const priorityCompanies = DATA.company_priority.filter((c) => c.priority_level === "high" || c.priority_level === "mid").length;
+    const kpis = [
+      { label: "변화 발생 기업 수", value: changedCompanies, unit: "개사", icon: "building", color: "var(--brand)" },
+      { label: "재검토 우선 기업 수", value: priorityCompanies, unit: "개사", icon: "flag", color: "var(--critical)" },
+      { label: "신규 공시 수", value: nonCorrection, unit: "건", icon: "doc", color: "var(--series-3)" },
+      { label: "정정 공시 수", value: corrections, unit: "건", icon: "edit", color: "var(--warning)" },
+      { label: "재무 변화 이벤트 수", value: financialEvents, unit: "건", icon: "chart", color: "var(--series-2)" },
+    ];
+    const icons = {
+      building: '<rect x="4" y="3" width="16" height="18" rx="1.5" stroke="currentColor" stroke-width="2"/><path d="M8 8h2M14 8h2M8 12h2M14 12h2M8 16h2M14 16h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      flag: '<path d="M5 3v18M5 4h11l-2.5 4L16 12H5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+      doc: '<path d="M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 3v5h5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+      edit: '<path d="M12 20h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+      chart: '<path d="M4 20V10M11 20V4M18 20v-7" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>',
+    };
+    document.getElementById("kpi-row").innerHTML = kpis.map((k) => `
+      <div class="kpi-card">
+        <div class="kpi-top"><div class="kpi-label">${k.label}</div><div class="kpi-icon" style="background:${k.color}22; color:${k.color}"><svg viewBox="0 0 24 24" fill="none">${icons[k.icon]}</svg></div></div>
+        <div class="kpi-value num">${k.value}<sub>${k.unit}</sub></div>
+        <div class="kpi-delta">직전 점검 대비 비교 불가 (최초 실행)</div>
+      </div>`).join("");
+  }
+
+  function renderRankChart() {
+    const ranked = DATA.company_priority.slice().sort((a, b) => b.priority_score - a.priority_score);
+    const max = Math.max(1, ...ranked.map((r) => r.priority_score));
+    document.getElementById("rank-chart").innerHTML = ranked.map((r) => {
+      const pct = Math.max(6, (r.priority_score / max) * 100);
+      return `<div class="rank-row"><div class="rank-name">${esc(r.corp_name)}</div><div class="rank-track"><div class="rank-fill" style="width:${pct}%; background:${levelColor[r.priority_level]}"></div></div><div class="rank-score num">${r.priority_score}</div></div>`;
+    }).join("");
+  }
+
+  function isoWeek(dateStr) {
+    const d = new Date(dateStr + "T00:00:00Z");
+    const day = (d.getUTCDay() + 6) % 7;
+    d.setUTCDate(d.getUTCDate() - day);
+    return d.toISOString().slice(0, 10);
+  }
+  function renderTrendChart() {
+    const buckets = {};
+    DATA.disclosures.forEach((d) => {
+      const wk = isoWeek(d.rcept_dt);
+      if (!buckets[wk]) buckets[wk] = { newC: 0, corr: 0 };
+      if (d.is_correction) buckets[wk].corr++; else buckets[wk].newC++;
+    });
+    const weeks = Object.keys(buckets).sort();
+    const W = 560, H = 190, padL = 30, padR = 10, padT = 10, padB = 24;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const maxV = Math.max(1, ...weeks.map((w) => Math.max(buckets[w].newC, buckets[w].corr)));
+    const x = (i) => padL + (weeks.length <= 1 ? plotW / 2 : (i / (weeks.length - 1)) * plotW);
+    const y = (v) => padT + plotH - (v / maxV) * plotH;
+    const line = (key, color) => {
+      const pts = weeks.map((w, i) => `${x(i)},${y(buckets[w][key])}`).join(" ");
+      const dots = weeks.map((w, i) => `<circle cx="${x(i)}" cy="${y(buckets[w][key])}" r="3" fill="${color}" />`).join("");
+      return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
+    };
+    const gridLines = [0, 0.5, 1].map((f) => {
+      const yy = padT + plotH * (1 - f);
+      return `<line class="grid-line" x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}"/><text x="${padL - 6}" y="${yy + 3}" text-anchor="end">${Math.round(maxV * f)}</text>`;
+    }).join("");
+    const xLabels = weeks.filter((_, i) => i % Math.ceil(weeks.length / 6 || 1) === 0).map((w) => `<text x="${x(weeks.indexOf(w))}" y="${H - 6}" text-anchor="middle">${w.slice(5)}</text>`).join("");
+    document.getElementById("trend-chart").innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${gridLines}<line class="axis-line" x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}"/>${line("newC", "var(--series-1)")}${line("corr", "var(--critical)")}${xLabels}</svg>`;
+  }
+
+  function renderSummary(corpCode) {
+    const cp = DATA.company_priority.find((c) => c.corp_code === corpCode);
+    if (!cp) { document.getElementById("sel-summary").innerHTML = '<div class="empty-note">데이터 없음</div>'; return; }
+    const co = companyById()[cp.corp_code];
+    const events = DATA.change_events.filter((e) => e.corp_code === cp.corp_code);
+    const rules = [...new Set(events.map((e) => e.rule_id))].sort();
+    const topEvents = events.slice().sort((a, b) => b.weight - a.weight).slice(0, 3);
+    document.getElementById("sel-summary").innerHTML = `
+      <div class="panel-head"><div class="panel-title">선택 기업 변화 요약</div></div>
+      <div class="summary-id"><span class="corp">${esc(cp.corp_name)}</span><span class="code num">(${co.stock_code})</span><span class="badge ${levelBadgeClass[cp.priority_level]}">${levelLabel[cp.priority_level]}</span></div>
+      <div class="summary-stats">
+        <div class="row"><span>재검토 우선순위 점수</span><b>${cp.priority_score}점</b></div>
+        <div class="row"><span>신규 공시</span><b>${DATA.disclosures.filter(d=>d.corp_code===cp.corp_code && !d.is_correction).length}건</b></div>
+        <div class="row"><span>정정 공시</span><b>${DATA.disclosures.filter(d=>d.corp_code===cp.corp_code && d.is_correction).length}건</b></div>
+        <div class="row"><span>재무 변화</span><b>${cp.financial_rule_count}건</b></div>
+      </div>
+      <div class="summary-rules">${rules.map((r) => `<span class="rule-chip">${r}</span>`).join("")}</div>
+      <div><div style="font-size:11px;font-weight:700;color:var(--text-secondary);margin-bottom:5px;">핵심 변화 요약</div><ul class="summary-bullets">${topEvents.map((e) => `<li>${esc(e.description)}</li>`).join("") || "<li>탐지된 변화 없음</li>"}</ul></div>`;
+  }
+
+  function renderFinTop() {
+    const items = DATA.change_events.filter((e) => e.change_type === "financial").slice().sort((a, b) => b.weight - a.weight || Math.abs(b.change_rate || 0) - Math.abs(a.change_rate || 0));
+    document.getElementById("fin-top-title").textContent = `주요 재무 변화 (전체 ${items.length}건)`;
+    const rows = items.map((e) => `<tr><td class="name-cell">${esc(e.corp_name)}</td><td>${esc(e.account_std_name || "")}</td><td class="num-cell">${fmtNum(e.old_value)}</td><td class="num-cell">${fmtNum(e.new_value)}</td><td class="num-cell ${(e.change_rate||0) >= 0 ? 'delta-up':'delta-down'}">${e.change_rate != null ? fmtPct(e.change_rate) : "—"}</td><td><span class="rule-chip">${e.rule_id}</span></td></tr>`).join("");
+    document.getElementById("fin-top-table").innerHTML = `<thead><tr><th>기업</th><th>지표</th><th>이전</th><th>최신</th><th>변화율</th><th>Rule</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty-note">탐지된 재무 변화 없음</td></tr>'}</tbody>`;
+  }
+  function renderCorrTop() {
+    const items = DATA.disclosures.filter((d) => d.is_correction).slice().sort((a, b) => b.rcept_dt.localeCompare(a.rcept_dt)).slice(0, 8);
+    document.getElementById("corr-top-title").textContent = `정정 공시 (최근 ${items.length}건)`;
+    const rows = items.map((d) => `<tr><td class="name-cell">${esc(d.corp_name)}</td><td>${esc(d.report_nm_clean)}</td><td class="num-cell">${fmtDate(d.rcept_dt)}</td><td>${d.orig_rcept_no ? '<span class="badge badge-low">원공시 연결</span>' : '<span class="badge badge-none">정정 전 공시 없음</span>'}</td><td><a class="dart-link" href="${dartUrl(d.rcept_no)}" target="_blank" rel="noopener">원문 ↗</a></td></tr>`).join("");
+    document.getElementById("corr-top-table").innerHTML = `<thead><tr><th>기업</th><th>공시명</th><th>정정일</th><th>연결 상태</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty-note">정정 공시 없음</td></tr>'}</tbody>`;
+  }
+  function renderDistChart() {
+    const ranked = DATA.company_priority.slice().sort((a, b) => b.priority_score - a.priority_score);
+    const max = Math.max(1, ...ranked.map((r) => r.financial_rule_count + r.disclosure_rule_count));
+    document.getElementById("dist-chart").innerHTML = ranked.map((r) => {
+      const finPct = (r.financial_rule_count / max) * 100, discPct = (r.disclosure_rule_count / max) * 100;
+      return `<div class="rank-row"><div class="rank-name">${esc(r.corp_name)}</div><div class="rank-track" style="display:flex;"><div style="width:${finPct}%; background:var(--series-1); height:100%;"></div><div style="width:${discPct}%; background:var(--series-2); height:100%;"></div></div><div class="rank-score num">${r.financial_rule_count + r.disclosure_rule_count}</div></div>`;
+    }).join("");
+  }
+
+  function latestFinancials(corpCode) {
+    const rows = DATA.financial_accounts.filter((f) => f.corp_code === corpCode);
+    const byAccount = {};
+    rows.forEach((r) => {
+      const key = r.account_std_code, cur = byAccount[key];
+      if (!cur || r.bsns_year > cur.bsns_year || (r.bsns_year === cur.bsns_year && r.fs_div === "CFS")) byAccount[key] = r;
+    });
+    return byAccount;
+  }
+
+  function renderDetail(corpCode) {
+    const cp = DATA.company_priority.find((c) => c.corp_code === corpCode);
+    const co = companyById()[corpCode];
+    if (!cp || !co) return;
+    const events = DATA.change_events.filter((e) => e.corp_code === corpCode);
+    const rules = [...new Set(events.map((e) => e.rule_id))].sort();
+    const newDiscl = DATA.disclosures.filter((d) => d.corp_code === corpCode && !d.is_correction).sort((a,b)=>b.rcept_dt.localeCompare(a.rcept_dt));
+    const corrDiscl = DATA.disclosures.filter((d) => d.corp_code === corpCode && d.is_correction).sort((a,b)=>b.rcept_dt.localeCompare(a.rcept_dt));
+
+    document.getElementById("detail-banner").innerHTML = `
+      <div class="summary-id"><span class="corp" style="font-size:17px;">${esc(co.corp_name)}</span><span class="code num">(${co.stock_code})</span><span class="badge ${levelBadgeClass[cp.priority_level]}">${levelLabel[cp.priority_level]}</span></div>
+      <div class="divider"></div><div class="stat"><div class="v">${cp.priority_score}점</div><div class="l">재검토 우선순위</div></div>
+      <div class="divider"></div><div class="stat"><div class="v">${newDiscl.length}건</div><div class="l">신규 공시</div></div>
+      <div class="stat"><div class="v">${corrDiscl.length}건</div><div class="l">정정 공시</div></div>
+      <div class="stat"><div class="v">${cp.financial_rule_count}건</div><div class="l">재무 변화</div></div>
+      <div class="divider"></div><div style="display:flex; gap:5px; flex-wrap:wrap;">${rules.map((r) => `<span class="rule-chip">${r}</span>`).join("") || '<span class="empty-note">적용된 Rule 없음</span>'}</div>`;
+
+    const byAccount = latestFinancials(corpCode);
+    const order = ["REVENUE", "OP_INCOME", "OCF", "TOTAL_LIAB", "BORROWINGS"];
+    const ruleByAccount = {};
+    events.filter((e) => e.account_std_name).forEach((e) => { ruleByAccount[e.account_std_name] = e.rule_id; });
+    const finRows = order.filter((k) => byAccount[k]).map((k) => {
+      const r = byAccount[k];
+      const rate = (r.frmtrm_amount && r.frmtrm_amount !== 0) ? (r.thstrm_amount - r.frmtrm_amount) / r.frmtrm_amount : null;
+      const rule = ruleByAccount[r.account_std_name];
+      return `<tr><td class="name-cell">${esc(r.account_std_name)}</td><td class="num-cell">${fmtNum(r.frmtrm_amount)}</td><td class="num-cell">${fmtNum(r.thstrm_amount)}</td><td class="num-cell ${rate >= 0 ? 'delta-up':'delta-down'}">${fmtPct(rate)}</td><td>${rule ? `<span class="rule-chip">${rule}</span>` : '<span style="color:var(--text-muted);font-size:11px;">—</span>'}</td></tr>`;
+    }).join("");
+    document.getElementById("detail-fin-table").innerHTML = `<thead><tr><th>지표</th><th>이전(${(byAccount.REVENUE&&(byAccount.REVENUE.bsns_year-1))||''})</th><th>최신(${(byAccount.REVENUE&&byAccount.REVENUE.bsns_year)||''})</th><th>변화율</th><th>적용 Rule</th></tr></thead><tbody>${finRows || '<tr><td colspan="5" class="empty-note">재무 데이터 없음</td></tr>'}</tbody>`;
+
+    document.getElementById("detail-rules").innerHTML = rules.map((r) => {
+      const cat = DATA.rule_catalog.find((c) => c.rule_id === r);
+      return `<div class="rule-card"><span class="rule-chip">${r}</span><div class="desc">${esc(cat ? cat.description : "")}</div></div>`;
+    }).join("") || '<div class="empty-note">적용된 Rule 없음</div>';
+
+    const slopeKeys = [["REVENUE", "매출액", "var(--series-1)"], ["OP_INCOME", "영업이익", "var(--series-2)"], ["OCF", "영업활동현금흐름", "var(--series-3)"]];
+    const have = slopeKeys.filter(([k]) => byAccount[k]);
+    if (have.length) {
+      const W = 620, H = 200, padL = 70, padR = 110, padT = 16, padB = 28;
+      const plotW = W - padL - padR, plotH = H - padT - padB;
+      const allVals = have.flatMap(([k]) => [byAccount[k].frmtrm_amount, byAccount[k].thstrm_amount]);
+      const minV = Math.min(0, ...allVals), maxV = Math.max(...allVals);
+      const y = (v) => padT + plotH - ((v - minV) / (maxV - minV || 1)) * plotH;
+      const yearPrior = byAccount[have[0][0]].bsns_year - 1, yearLatest = byAccount[have[0][0]].bsns_year;
+      const lines = have.map(([k, label, color]) => {
+        const r = byAccount[k], y1 = y(r.frmtrm_amount), y2 = y(r.thstrm_amount);
+        return `<line x1="${padL}" y1="${y1}" x2="${W-padR}" y2="${y2}" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/><circle cx="${padL}" cy="${y1}" r="4" fill="${color}"/><circle cx="${W-padR}" cy="${y2}" r="4" fill="${color}"/><text x="${W-padR+10}" y="${y2+4}" text-anchor="start" style="font-weight:600;" fill="${color}">${label} ${fmtNum(r.thstrm_amount)}</text>`;
+      }).join("");
+      document.getElementById("slope-chart").innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" width="100%" style="display:block; overflow:visible;"><line class="axis-line" x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+plotH}"/><line class="axis-line" x1="${W-padR}" y1="${padT}" x2="${W-padR}" y2="${padT+plotH}"/><text x="${padL}" y="${H-8}" text-anchor="middle">${yearPrior}</text><text x="${W-padR}" y="${H-8}" text-anchor="middle">${yearLatest}</text>${lines}</svg>`;
+    } else {
+      document.getElementById("slope-chart").innerHTML = '<div class="empty-note">재무 시계열 데이터 없음</div>';
+    }
+
+    document.getElementById("d-new-title").textContent = `신규 공시 목록 (${newDiscl.length}건)`;
+    document.getElementById("detail-new-table").innerHTML = `<thead><tr><th>공시일</th><th>공시명</th><th>접수번호</th><th></th></tr></thead><tbody>${newDiscl.slice(0, 12).map((d) => `<tr><td class="num-cell">${fmtDate(d.rcept_dt)}</td><td>${esc(d.report_nm_clean)}</td><td class="num-cell">${d.rcept_no}</td><td><a class="dart-link" href="${dartUrl(d.rcept_no)}" target="_blank" rel="noopener">원문 ↗</a></td></tr>`).join("") || '<tr><td colspan="4" class="empty-note">없음</td></tr>'}</tbody>`;
+
+    document.getElementById("d-corr-title").textContent = `정정 공시 신구 대비 (${corrDiscl.length}건)`;
+    document.getElementById("detail-corr-table").innerHTML = `<thead><tr><th>정정일</th><th>공시명</th><th>원공시 연결</th><th></th></tr></thead><tbody>${corrDiscl.slice(0, 12).map((d) => `<tr><td class="num-cell">${fmtDate(d.rcept_dt)}</td><td>${esc(d.report_nm_clean)}</td><td>${d.orig_rcept_no ? `<span class="badge badge-low">연결됨</span>` : '<span class="badge badge-none">없음</span>'}</td><td><a class="dart-link" href="${dartUrl(d.rcept_no)}" target="_blank" rel="noopener">원문 ↗</a></td></tr>`).join("") || '<tr><td colspan="4" class="empty-note">없음</td></tr>'}</tbody>`;
+
+    renderAiExplain(corpCode);
+    document.getElementById("footer-detail").textContent = `검토 기준일: ${fmtDate((DATA.kpi_daily[0]||{}).review_date)} · 상단에서 다시 분석하면 최신화됩니다.`;
+  }
+
+  function renderAiExplain(corpCode) {
+    const sentences = (DATA.explanation_sentences || []).filter((s) => s.corp_code === corpCode);
+    const el = document.getElementById("ai-explain");
+    if (!sentences.length) { el.innerHTML = '<div class="empty-note">이 기업에 대해 생성된 AI 해설이 없습니다 (OPENAI_API_KEY 설정 후 분석 시 자동 생성됩니다).</div>'; return; }
+    const groups = {};
+    sentences.forEach((s) => { if (!groups[s.rcept_no]) groups[s.rcept_no] = { meta: s, items: [] }; groups[s.rcept_no].items.push(s); });
+    const checkIcon = '<svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    el.innerHTML = Object.values(groups).map((g) => `
+      <div class="ai-group">
+        <div class="ai-group-head"><div class="ai-group-title">${esc(g.meta.report_nm_clean)}${g.meta.orig_rcept_no ? ` <span style="font-weight:400;color:var(--text-muted)">(원공시 연결됨)</span>` : ""}</div><div class="ai-group-date">정정일 ${fmtDate(g.meta.rcept_dt)} · <a class="dart-link" href="${dartUrl(g.meta.rcept_no)}" target="_blank" rel="noopener">원문 ↗</a></div></div>
+        ${g.items.map((s) => `<div class="ai-sentence"><div class="mark">${checkIcon}</div><div class="body"><div class="text">${esc(s.sentence_text)}</div><div class="quote"><span class="src">${s.evidence_rcept_no} · ${esc(s.evidence_section)}</span>"${esc(s.evidence_excerpt)}"</div></div></div>`).join("")}
+      </div>`).join("");
+  }
+
+  // ---- data loading ----
+  async function loadDashboard() {
+    const res = await fetch("/api/dashboard");
+    DATA = await res.json();
+    renderAll();
+  }
+
+  // ---- analyze flow ----
+  const btn = document.getElementById("a-run");
+  const statusEl = document.getElementById("a-status");
+  const logEl = document.getElementById("a-log");
+  btn.addEventListener("click", async () => {
+    const stockCode = document.getElementById("a-stock-code").value.trim();
+    const reviewDate = document.getElementById("a-review-date").value;
+    if (!/^\d{6}$/.test(stockCode)) { statusEl.textContent = "6자리 종목코드를 입력하세요 (예: 005930)."; return; }
+    btn.disabled = true;
+    statusEl.textContent = `${stockCode} 분석 중... (OpenDART 수집 → DB 적재 → 규칙 → AI 해설, 30초~1분 소요)`;
+    logEl.textContent = "";
+    logEl.classList.add("open");
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stock_code: stockCode, review_date: reviewDate }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.textContent = "실패: " + (data.detail || res.statusText);
+      } else {
+        logEl.textContent = data.log.join("\n");
+        statusEl.textContent = `완료: ${data.corp_name} (${stockCode})`;
+        await loadDashboard();
+      }
+    } catch (e) {
+      statusEl.textContent = "요청 실패: " + e.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  loadDashboard();
+})();
+</script>
+</body>
+</html>
