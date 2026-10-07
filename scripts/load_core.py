@@ -95,12 +95,21 @@ def load_disclosures(cur) -> None:
     )
     print(f"core.disclosures: {len(rows_to_insert)}건 upsert")
 
-    # 정정공시 -> 원공시 연결: 같은 기업 + 같은 정제 제목 중 가장 가까운 과거 공시
+    # 재적재 시 이전 매칭 결과를 지우고 다시 계산 (매칭 로직이 바뀔 수 있으므로 멱등성 보장)
+    cur.execute(
+        "UPDATE core.disclosures SET orig_rcept_no = NULL, match_method = NULL WHERE is_correction"
+    )
+
+    # 정정공시 -> 원공시 연결.
+    # 1단계: 같은 기업 + 같은 정제 제목 + 같은 제출인(flr_nm) 중 가장 가까운 과거 공시.
+    #   ("임원ㆍ주요주주특정증권등소유상황보고서"처럼 매일 여러 임원이 각자 내는 공통
+    #   양식은 제목만으로 매칭하면 다른 사람의 원공시와 잘못 연결됨 - 실측으로 확인된 버그.
+    #   flr_nm까지 같아야 신뢰 가능한 매칭으로 본다.)
     cur.execute(
         """
         UPDATE core.disclosures d
         SET orig_rcept_no = m.orig_rcept_no,
-            match_method = 'exact_title'
+            match_method = 'exact_title_filer'
         FROM (
             SELECT DISTINCT ON (c.rcept_no)
                 c.rcept_no,
@@ -109,6 +118,7 @@ def load_disclosures(cur) -> None:
             JOIN core.disclosures o
                 ON o.corp_code = c.corp_code
                AND o.report_nm_clean = c.report_nm_clean
+               AND o.flr_nm = c.flr_nm
                AND o.rcept_dt < c.rcept_dt
                AND o.rcept_no <> c.rcept_no
             WHERE c.is_correction
@@ -117,7 +127,34 @@ def load_disclosures(cur) -> None:
         WHERE d.rcept_no = m.rcept_no
         """
     )
-    linked = cur.rowcount
+    linked_filer = cur.rowcount
+
+    # 2단계: flr_nm으로 못 찾았는데, 제목만으로도 과거 후보가 "정확히 1개"뿐이면 안전하게 매칭.
+    # 후보가 2개 이상이면 추측하지 않고 넘어간다 (PRD: 추측하지 않고 누락으로 표시).
+    cur.execute(
+        """
+        WITH candidates AS (
+            SELECT c.rcept_no AS corr_rcept_no, o.rcept_no AS orig_rcept_no,
+                   count(*) OVER (PARTITION BY c.rcept_no) AS cand_count,
+                   row_number() OVER (PARTITION BY c.rcept_no ORDER BY o.rcept_dt DESC) AS rn
+            FROM core.disclosures c
+            JOIN core.disclosures o
+                ON o.corp_code = c.corp_code
+               AND o.report_nm_clean = c.report_nm_clean
+               AND o.rcept_dt < c.rcept_dt
+               AND o.rcept_no <> c.rcept_no
+            WHERE c.is_correction AND c.orig_rcept_no IS NULL
+        )
+        UPDATE core.disclosures d
+        SET orig_rcept_no = candidates.orig_rcept_no,
+            match_method = 'exact_title_unique'
+        FROM candidates
+        WHERE d.rcept_no = candidates.corr_rcept_no
+          AND candidates.rn = 1 AND candidates.cand_count = 1
+        """
+    )
+    linked_unique = cur.rowcount
+
     cur.execute(
         """
         UPDATE core.disclosures
@@ -126,7 +163,10 @@ def load_disclosures(cur) -> None:
         """
     )
     unmatched = cur.rowcount
-    print(f"정정공시 원공시 연결: {linked}건 매칭, {unmatched}건 미매칭(정정 전 공시 없음)")
+    print(
+        f"정정공시 원공시 연결: {linked_filer}건 매칭(제출인 일치), "
+        f"{linked_unique}건 매칭(제목 유일), {unmatched}건 미매칭(정정 전 공시 없음)"
+    )
 
 
 def load_financial_accounts(cur) -> None:

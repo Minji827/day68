@@ -62,6 +62,15 @@ docker compose up -d
   `mart.kpi_daily` / `mart.rate_context` 채움
 - `scripts/run_demo.py` / `run_demo.bat` — 위 전체 과정을 한 번에 실행하는 원클릭 러너
 - `scripts/wait_for_db.py`, `scripts/show_results.py` — 데모 러너 보조 스크립트
+- `scripts/compare_disclosure.py` — **정정 전후 비교 (AI 없이, 결정론적).** 원공시·정정공시
+  원문을 섹션 단위로 받아 단어 단위 diff(`[-삭제-]{+추가+}`)를 출력. FR-01 AC("정정공시는
+  원공시와 연결되어 정정 전·후를 확인할 수 있다")를 실제로 눈에 보이게 하는 기능 —
+  `mart.change_events`가 "정정이 있었다"는 점수만 주고 **무엇이 바뀌었는지는 안 보여주던
+  공백**을 메움.
+  ```bash
+  .venv/Scripts/python scripts/compare_disclosure.py --stock-code 005930
+  .venv/Scripts/python scripts/compare_disclosure.py --rcept-no 20260814003672
+  ```
 
 **해설서 생성 (OpenAI, FR-05) — 코드 완성, 실행은 보류**
 - `scripts/dart_xml.py` — 공시원문(document.xml) 섹션 파서. **실측으로 두 가지 포맷을
@@ -113,9 +122,16 @@ docker compose up -d
 
 - **정정공시 ↔ 원공시 연결**: `list.json`에 원공시 접수번호 필드가 없음. `report_nm`에서
   `[기재정정]` 등 접두어를 제거한 뒤 같은 기업의 더 이른 공시 중 제목이 일치하는 것을 찾는
-  방식(`core.disclosures.orig_rcept_no`)으로 처리. 한화솔루션 실데이터에서 6건 중 2건 매칭,
-  4건은 수집 기간 밖이라 "정정 전 공시 없음"(`match_method='unmatched'`)으로 처리됨 —
-  정상 동작.
+  방식(`core.disclosures.orig_rcept_no`)으로 처리.
+  **제목만으로 매칭하면 실제로 틀린다** — "임원ㆍ주요주주특정증권등소유상황보고서"처럼
+  여러 임원이 매일 각자 내는 공통 양식은 제목이 전부 같아서, 박태훈의 정정공시 6건이
+  여명구·손영수 등 **다른 사람의 원공시**에 잘못 연결되는 걸 `scripts/compare_disclosure.py`로
+  실제 원문을 diff 떠보고서야 발견했다 (숫자만 보면 그럴듯해서 안 터짐 — 조용히 틀린 값이
+  나오는 부류의 버그). 수정: 같은 기업+제목에 더해 **제출인(`flr_nm`)까지 일치**해야
+  매칭(`exact_title_filer`), 그래도 못 찾으면 제목 후보가 정확히 1개일 때만
+  매칭(`exact_title_unique`), 그 외엔 추측하지 않고 "정정 전 공시 없음"(`unmatched`)으로
+  둔다. 삼성전자 실데이터 기준 15건 중 7건(제출인 일치)+1건(제목 유일)=8건 매칭,
+  7건은 안전하게 미매칭 처리.
 - **계정명이 회사마다 다름**: "차입금" 단일 계정이 없고 `장기차입금`/`단기차입금`으로
   쪼개져 있어 `core.account_mapping`에서 합산(`agg_method='sum'`). 더 나아가 **계정명 자체도
   회사별로 다름** — 삼성전자는 `영업이익`/`영업활동현금흐름`, 한화솔루션은

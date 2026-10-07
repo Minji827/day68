@@ -41,6 +41,7 @@ def main() -> None:
     run("RAW -> CORE: core 변환", ["scripts/load_core.py"])
     run("변화 탐지 규칙 실행", ["scripts/run_rules.py", "--review-date", review_date])
     run("결과 출력", ["scripts/show_results.py"])
+    run("정정 전후 비교 (AI 없이, 원문 diff)", ["scripts/compare_disclosure.py", "--corp", corp, "--review-date", review_date])
 
     print("\n=== 완료 ===")
 

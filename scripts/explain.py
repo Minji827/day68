@@ -22,15 +22,13 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import dart_xml
 import db
-import opendart_client
+from sections import ensure_sections
 
 load_dotenv()
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-DOCS_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "documents"
 
 SYSTEM_PROMPT = """\
 당신은 금융 공시 변경 해설가입니다. 아래로 정정공시 원문(그리고 있다면 정정 전 원공시 원문)이
@@ -47,47 +45,6 @@ SYSTEM_PROMPT = """\
 4. 반드시 아래 JSON 형식으로만 응답한다:
 {"sentences": [{"text": "...", "evidence_rcept_no": "...", "evidence_section_no": 0, "evidence_excerpt": "..."}]}
 """
-
-
-def ensure_sections(cur, rcept_no: str) -> list[dict]:
-    """core.disclosure_sections에 이미 있으면 그대로, 없으면 원문 받아서 파싱 후 적재."""
-    cur.execute(
-        "SELECT section_no, section_title, section_text FROM core.disclosure_sections "
-        "WHERE rcept_no = %s ORDER BY section_no",
-        (rcept_no,),
-    )
-    rows = cur.fetchall()
-    if rows:
-        return [{"section_no": r[0], "section_title": r[1], "section_text": r[2]} for r in rows]
-
-    DOCS_DIR.mkdir(parents=True, exist_ok=True)
-    zip_path = DOCS_DIR / f"{rcept_no}.zip"
-    if zip_path.exists():
-        zip_bytes = zip_path.read_bytes()
-    else:
-        try:
-            zip_bytes = opendart_client.get_document_original(rcept_no)
-        except opendart_client.OpenDartError as e:
-            print(f"  원문 다운로드 실패 {rcept_no}: {e}")
-            return []
-        zip_path.write_bytes(zip_bytes)
-
-    sections = dart_xml.parse_sections(zip_bytes)
-    if not sections:
-        print(f"  섹션 파싱 결과 없음: {rcept_no}")
-        return []
-
-    for s in sections:
-        cur.execute(
-            """
-            INSERT INTO core.disclosure_sections (rcept_no, section_no, section_title, section_text)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (rcept_no, section_no) DO UPDATE SET
-                section_title = EXCLUDED.section_title, section_text = EXCLUDED.section_text
-            """,
-            (rcept_no, s["section_no"], s["section_title"], s["section_text"]),
-        )
-    return sections
 
 
 def build_prompt(target: dict, target_sections: list[dict], orig_sections: list[dict]) -> str:
