@@ -32,22 +32,49 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 SYSTEM_PROMPT = """\
 당신은 금융 공시 변경 해설가입니다. 아래로 정정공시 원문(그리고 있다면 정정 전 원공시 원문)이
-섹션 단위로 주어집니다. 무엇이 어떻게 바뀌었는지 투자 리서치 담당자가 바로 이해할 수 있도록
-한국어로 1~3개의 짧은 문장을 작성하세요.
+섹션 단위로 주어지고, 이 기업에 이번 검토에서 이미 발동한 Rule 목록(우리 룰엔진이 SQL로
+계산한 결과)도 함께 주어집니다. 투자 리서치 담당자가 "무엇이 바뀌었는지 → 왜 다시 봐야
+하는지 → 추가로 뭘 확인해야 하는지"를 한 번에 파악하도록, 1~2개의 변화 항목을 작성하세요.
 
-반드시 지켜야 할 규칙:
-1. 모든 문장은 주어진 원문 섹션에서 실제로 확인되는 내용만 담아야 한다. 추측하거나 원문에
-   없는 수치·사실을 만들어내지 않는다.
-2. 각 문장마다 근거를 반드시 함께 제시한다: evidence_rcept_no(그 내용이 나온 공시의 접수번호),
-   evidence_section_no(그 섹션 번호), evidence_excerpt(그 섹션 원문에서 "토씨 하나 틀리지 않고
-   그대로 복사한" 짧은 발췌, 최대 150자).
-3. 원문에서 근거를 찾을 수 없으면 그 문장은 아예 만들지 않는다. 문장 수가 0개여도 된다.
-4. 반드시 아래 JSON 형식으로만 응답한다:
-{"sentences": [{"text": "...", "evidence_rcept_no": "...", "evidence_section_no": 0, "evidence_excerpt": "..."}]}
+각 항목은 change / meaning / check 세 부분으로 구성합니다:
+1. change (변화): 원문에서 실제로 확인되는 사실만. 추측하거나 원문에 없는 수치·사실을
+   만들어내지 않는다. 반드시 근거를 함께 제시: evidence_rcept_no(그 내용이 나온 공시의
+   접수번호), evidence_section_no(섹션 번호), evidence_excerpt(그 섹션 원문에서 "토씨 하나
+   틀리지 않고 그대로 복사한" 짧은 발췌, 최대 150자). 근거를 찾을 수 없으면 그 항목 자체를
+   만들지 않는다.
+2. meaning (의미): change가 왜 재검토 대상인지. **반드시 주어진 Rule 목록 안에서만** 연결
+   하라 — 예: "이는 F2(영업활동현금흐름 흑자→적자 전환)에 해당합니다." Rule 목록에 맞는
+   항목이 없으면 "현재 Rule 기준으로는 별도 분류되지 않았습니다" 같은 중립적 문장만 쓰고,
+   시장 상황·경영 판단 등 원문에 없는 원인을 추측해서 지어내지 않는다.
+3. check (추가 확인사항): 담당자가 다음에 무엇을 확인하면 좋을지 "제안" (사실 주장이 아님,
+   예: "정정 사유가 일회성 재분류인지 원문 II장에서 확인 권장"). 이 부분은 근거 검증
+   대상이 아니다.
+
+반드시 아래 JSON 형식으로만 응답한다 (근거 없으면 items가 빈 배열이어도 됨):
+{"items": [{"change": "...", "meaning": "...", "check": "...",
+            "evidence_rcept_no": "...", "evidence_section_no": 0, "evidence_excerpt": "..."}]}
 """
 
 
-def build_prompt(target: dict, target_sections: list[dict], orig_sections: list[dict]) -> str:
+def fired_rules(cur, corp_code: str, review_date: str) -> list[dict]:
+    """이 기업이 이번 검토에서 실제로 받은 Rule 목록 (weight>0, 이중계산으로 0 처리된 건 제외).
+    AI의 "의미" 파트가 이 목록 밖으로 나가지 않게 하는 근거 자료."""
+    cur.execute(
+        """
+        SELECT ce.rule_id, rc.description, ce.weight
+        FROM mart.change_events ce
+        JOIN core.rule_catalog rc ON rc.rule_id = ce.rule_id
+        WHERE ce.corp_code = %s AND ce.review_date = %s AND ce.weight > 0
+        ORDER BY ce.weight DESC
+        """,
+        (corp_code, review_date),
+    )
+    return [{"rule_id": r[0], "description": r[1], "weight": r[2]} for r in cur.fetchall()]
+
+
+def build_prompt(
+    target: dict, target_sections: list[dict], orig_sections: list[dict], rules: list[dict]
+) -> str:
     parts = [f"## 정정공시 (접수번호 {target['rcept_no']}): {target['report_nm_clean']}"]
     for s in target_sections:
         parts.append(f"[섹션 {s['section_no']}] {s['section_title']}\n{s['section_text']}")
@@ -57,6 +84,12 @@ def build_prompt(target: dict, target_sections: list[dict], orig_sections: list[
             parts.append(f"[섹션 {s['section_no']}] {s['section_title']}\n{s['section_text']}")
     else:
         parts.append("\n(정정 전 원공시를 찾지 못했습니다. 정정공시 원문만으로 해설하세요.)")
+
+    if rules:
+        rule_lines = "\n".join(f"- {r['rule_id']}: {r['description']}" for r in rules)
+        parts.append(f"\n## 이 기업이 이번 검토에서 받은 Rule 목록 (의미 작성 시 이 안에서만 연결)\n{rule_lines}")
+    else:
+        parts.append("\n## 이 기업이 이번 검토에서 받은 Rule 없음 (의미는 중립적으로만 작성)")
     return "\n\n".join(parts)
 
 
@@ -78,18 +111,20 @@ def call_openai(user_prompt: str) -> list[dict]:
     resp.raise_for_status()
     content = resp.json()["choices"][0]["message"]["content"]
     try:
-        return json.loads(content).get("sentences", [])
+        return json.loads(content).get("items", [])
     except json.JSONDecodeError:
         print(f"  JSON 파싱 실패, 원본: {content[:300]}")
         return []
 
 
-def validate_sentence(sentence: dict, sections_by_rcept: dict[str, dict[int, dict]]) -> bool:
-    rcept_no = sentence.get("evidence_rcept_no")
-    section_no = sentence.get("evidence_section_no")
-    excerpt = (sentence.get("evidence_excerpt") or "").strip()
-    text = (sentence.get("text") or "").strip()
-    if not (rcept_no and section_no is not None and excerpt and text):
+def validate_item(item: dict, sections_by_rcept: dict[str, dict[int, dict]]) -> bool:
+    """근거 검증은 '변화'(change) 파트에만 적용한다 — meaning은 Rule 목록 재진술,
+    check은 확인 제안이라 원문 대조 대상이 아니다 (PRD: 근거 없는 사실 주장만 배제)."""
+    rcept_no = item.get("evidence_rcept_no")
+    section_no = item.get("evidence_section_no")
+    excerpt = (item.get("evidence_excerpt") or "").strip()
+    change = (item.get("change") or "").strip()
+    if not (rcept_no and section_no is not None and excerpt and change):
         return False
     section = sections_by_rcept.get(rcept_no, {}).get(int(section_no))
     if not section:
@@ -97,7 +132,7 @@ def validate_sentence(sentence: dict, sections_by_rcept: dict[str, dict[int, dic
     return excerpt in section["section_text"]
 
 
-def process_target(cur, target: dict) -> int:
+def process_target(cur, target: dict, review_date: str) -> int:
     target_sections = ensure_sections(cur, target["rcept_no"])
     orig_sections = ensure_sections(cur, target["orig_rcept_no"]) if target["orig_rcept_no"] else []
     if not target_sections:
@@ -110,15 +145,25 @@ def process_target(cur, target: dict) -> int:
     if orig_sections:
         sections_by_rcept[target["orig_rcept_no"]] = {s["section_no"]: s for s in orig_sections}
 
-    prompt = build_prompt(target, target_sections, orig_sections)
-    sentences = call_openai(prompt)
+    rules = fired_rules(cur, target["corp_code"], review_date)
+    prompt = build_prompt(target, target_sections, orig_sections, rules)
+    items = call_openai(prompt)
 
     kept = 0
-    for i, sent in enumerate(sentences, start=1):
-        if not validate_sentence(sent, sections_by_rcept):
-            print(f"  REJECTED (근거 불일치): {sent.get('text', '')[:60]}")
+    for item in items:
+        if not validate_item(item, sections_by_rcept):
+            print(f"  REJECTED (근거 불일치): {item.get('change', '')[:60]}")
             continue
-        ev_section = sections_by_rcept[sent["evidence_rcept_no"]][int(sent["evidence_section_no"])]
+        ev_section = sections_by_rcept[item["evidence_rcept_no"]][int(item["evidence_section_no"])]
+        # 변화 / 의미 / 확인사항을 하나의 자연스러운 3문장으로 저장 (스키마 변경 없음).
+        meaning = (item.get("meaning") or "").strip()
+        check = (item.get("check") or "").strip()
+        text_parts = [item["change"].strip()]
+        if meaning:
+            text_parts.append(meaning)
+        if check:
+            text_parts.append(f"(확인 필요: {check})")
+        sentence_text = " ".join(text_parts)
         cur.execute(
             """
             INSERT INTO mart.explanation_sentences
@@ -133,14 +178,14 @@ def process_target(cur, target: dict) -> int:
             (
                 target["rcept_no"],
                 kept + 1,
-                sent["text"],
-                sent["evidence_rcept_no"],
+                sentence_text,
+                item["evidence_rcept_no"],
                 ev_section["section_title"],
-                sent["evidence_excerpt"],
+                item["evidence_excerpt"],
             ),
         )
         kept += 1
-    print(f"  {target['rcept_no']}: 생성 {len(sentences)}건 중 {kept}건 근거 검증 통과")
+    print(f"  {target['rcept_no']}: 생성 {len(items)}건 중 {kept}건 근거 검증 통과")
     return kept
 
 
@@ -203,7 +248,7 @@ def main() -> None:
                 total = 0
                 for t in targets:
                     print(f"- {t['rcept_no']} ({t['report_nm_clean']})")
-                    total += process_target(cur, t)
+                    total += process_target(cur, t, args.review_date)
         print(f"\nOK, 총 {total}개 해설 문장 저장")
     finally:
         conn.close()

@@ -124,8 +124,9 @@ def dashboard(review_date: str | None = None):
 RULE_FNS = [
     ("F1", run_rules.rule_f1), ("F2", run_rules.rule_f2), ("F3", run_rules.rule_f3),
     ("F4", run_rules.rule_f4), ("F5", run_rules.rule_f5),
+    ("F6", run_rules.rule_f6), ("F7", run_rules.rule_f7),
     ("D1", run_rules.rule_d1), ("D2", run_rules.rule_d2), ("D3", run_rules.rule_d3),
-    ("D4", run_rules.rule_d4), ("D5", run_rules.rule_d5),
+    ("D4", run_rules.rule_d4), ("D5", run_rules.rule_d5), ("D6", run_rules.rule_d6),
 ]
 
 
@@ -181,6 +182,9 @@ def analyze(req: AnalyzeRequest):
                 n = fn(cur, req.review_date, weights[rule_id])
                 if n:
                     step(f"  {rule_id}: {n}건")
+            deduped = run_rules.dedupe_financial_corrections(cur, req.review_date)
+            if deduped:
+                step(f"  이중계산 방지: D5 {deduped}건 weight 0 처리 (재무 Rule과 같은 사건)")
             run_rules.context_rate_vs_borrowings(cur, req.review_date)
             run_rules.aggregate_company_priority(cur, req.review_date)
             run_rules.aggregate_kpi(cur, req.review_date)
@@ -221,7 +225,7 @@ def analyze(req: AnalyzeRequest):
                 ]
                 total = 0
                 for t in targets:
-                    total += explain_mod.process_target(cur, t)
+                    total += explain_mod.process_target(cur, t, req.review_date)
                 step(f"  AI 해설 {total}개 문장 저장")
             else:
                 step("OPENAI_API_KEY 없음 - AI 해설 생략")

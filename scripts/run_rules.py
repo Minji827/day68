@@ -153,6 +153,48 @@ def rule_f5(cur, review_date: str, weight: int) -> int:
     return cur.rowcount
 
 
+def rule_f6(cur, review_date: str, weight: int) -> int:
+    """F6: 영업이익 직전 ≤0 → 최신 >0 (적자→흑자 전환). F1의 반대 방향 (positive, 멘토 피드백 ⑤)."""
+    cur.execute(
+        """
+        INSERT INTO mart.change_events
+            (corp_code, corp_name, review_date, change_type, rule_id, weight,
+             account_std_name, old_value, new_value, description)
+        SELECT f.corp_code, co.corp_name, %(rd)s, 'financial', 'F6', %(w)s,
+               f.account_std_name, f.frmtrm_amount, f.thstrm_amount,
+               format('영업이익 %%s → %%s (적자→흑자 전환, %%s년)', f.frmtrm_amount, f.thstrm_amount, f.bsns_year)
+        FROM core.latest_financials f
+        JOIN core.companies co USING (corp_code)
+        WHERE f.account_std_code = 'OP_INCOME' AND f.frmtrm_amount <= 0 AND f.thstrm_amount > 0
+        """,
+        {"rd": review_date, "w": weight},
+    )
+    return cur.rowcount
+
+
+def rule_f7(cur, review_date: str, weight: int) -> int:
+    """F7: 영업이익 YoY +50% 이상 급증. F3(매출 급감)과 대칭 (positive, 팀 설정값)."""
+    cur.execute(
+        """
+        INSERT INTO mart.change_events
+            (corp_code, corp_name, review_date, change_type, rule_id, weight,
+             account_std_name, old_value, new_value, change_rate, description)
+        SELECT f.corp_code, co.corp_name, %(rd)s, 'financial', 'F7', %(w)s,
+               f.account_std_name, f.frmtrm_amount, f.thstrm_amount,
+               (f.thstrm_amount - f.frmtrm_amount) / f.frmtrm_amount,
+               format('영업이익 YoY +%%s%%%% 급증 (%%s → %%s, %%s년)',
+                      round(100 * (f.thstrm_amount - f.frmtrm_amount) / f.frmtrm_amount, 1),
+                      f.frmtrm_amount, f.thstrm_amount, f.bsns_year)
+        FROM core.latest_financials f
+        JOIN core.companies co USING (corp_code)
+        WHERE f.account_std_code = 'OP_INCOME' AND f.frmtrm_amount > 0
+          AND (f.thstrm_amount - f.frmtrm_amount) / f.frmtrm_amount >= 0.50
+        """,
+        {"rd": review_date, "w": weight},
+    )
+    return cur.rowcount
+
+
 def rule_d1(cur, review_date: str, weight: int) -> int:
     """D1: 단기차입금 직전 대비 증가."""
     cur.execute(
@@ -243,6 +285,58 @@ def rule_d5(cur, review_date: str, weight: int) -> int:
         WHERE d.rcept_dt > %(rd)s AND d.is_correction
         """,
         {"rd": review_date, "w": weight},
+    )
+    return cur.rowcount
+
+
+def rule_d6(cur, review_date: str, weight: int) -> int:
+    """D6: 대규모 투자·조달·수주 공시 (positive, 멘토 피드백 ⑤ — D2 유상증자와 겹치지 않는
+    키워드만 사용)."""
+    cur.execute(
+        """
+        INSERT INTO mart.change_events
+            (corp_code, corp_name, review_date, change_type, rule_id, weight, rcept_no, description)
+        SELECT d.corp_code, co.corp_name, %(rd)s, 'disclosure', 'D6', %(w)s, d.rcept_no,
+               format('대규모 투자·조달·수주 공시: %%s', d.report_nm_clean)
+        FROM core.disclosures d
+        JOIN core.companies co USING (corp_code)
+        WHERE d.rcept_dt > %(rd)s
+          AND (d.report_nm_clean ILIKE '%%시설투자%%'
+               OR d.report_nm_clean ILIKE '%%타법인%%출자%%'
+               OR d.report_nm_clean ILIKE '%%수주%%'
+               OR d.report_nm_clean ILIKE '%%공급계약%%')
+        """,
+        {"rd": review_date, "w": weight},
+    )
+    return cur.rowcount
+
+
+def dedupe_financial_corrections(cur, review_date: str) -> int:
+    """멘토 피드백 ①: 정정공시(D5)와 그로 인해 재무제표가 바뀌어 뜬 F-rule이 같은 사건을
+    이중으로 점수에 더하지 않게 한다. 정정 대상이 재무제표 유형 보고서(사업/반기/분기
+    보고서)이고, 같은 기업·같은 리뷰에 F-rule이 이미 하나라도 떴으면 그 D5는 weight를
+    0으로 내린다 (합산 대신 더 큰 쪽인 F-rule만 점수에 남김). 둘을 정확히 같은 사업연도로
+    매칭하는 정교한 버전은 다음 단계 과제 — 지금은 "같은 기업·같은 리뷰"까지만 본다."""
+    cur.execute(
+        """
+        UPDATE mart.change_events ce
+        SET weight = 0,
+            description = ce.description || ' (관련 재무 Rule과 같은 사건으로 판단 — 점수 중복 방지, 상세화면에서 함께 확인)'
+        FROM core.disclosures d
+        WHERE ce.rcept_no = d.rcept_no
+          AND ce.review_date = %(rd)s
+          AND ce.rule_id = 'D5'
+          AND ce.weight > 0
+          AND (d.report_nm_clean ILIKE '%%사업보고서%%'
+               OR d.report_nm_clean ILIKE '%%반기보고서%%'
+               OR d.report_nm_clean ILIKE '%%분기보고서%%')
+          AND EXISTS (
+              SELECT 1 FROM mart.change_events f
+              WHERE f.review_date = ce.review_date AND f.corp_code = ce.corp_code
+                AND f.rule_id IN ('F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7')
+          )
+        """,
+        {"rd": review_date},
     )
     return cur.rowcount
 
@@ -350,14 +444,20 @@ def main() -> None:
                     "F3": rule_f3(cur, args.review_date, weights["F3"]),
                     "F4": rule_f4(cur, args.review_date, weights["F4"]),
                     "F5": rule_f5(cur, args.review_date, weights["F5"]),
+                    "F6": rule_f6(cur, args.review_date, weights["F6"]),
+                    "F7": rule_f7(cur, args.review_date, weights["F7"]),
                     "D1": rule_d1(cur, args.review_date, weights["D1"]),
                     "D2": rule_d2(cur, args.review_date, weights["D2"]),
                     "D3": rule_d3(cur, args.review_date, weights["D3"]),
                     "D4": rule_d4(cur, args.review_date, weights["D4"]),
                     "D5": rule_d5(cur, args.review_date, weights["D5"]),
+                    "D6": rule_d6(cur, args.review_date, weights["D6"]),
                 }
                 for rule_id, n in counts.items():
                     print(f"{rule_id}: {n}건")
+
+                deduped = dedupe_financial_corrections(cur, args.review_date)
+                print(f"이중계산 방지: D5 중 {deduped}건 weight 0으로 조정 (재무 Rule과 같은 사건)")
 
                 context_rate_vs_borrowings(cur, args.review_date)
                 aggregate_company_priority(cur, args.review_date)

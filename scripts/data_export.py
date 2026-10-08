@@ -48,7 +48,10 @@ def export_all(cur, review_date: str | None = None) -> dict:
             cur,
             "SELECT obs_date, value FROM core.rate_observations WHERE stat_code='722Y001' ORDER BY obs_date",
         ),
-        "rule_catalog": _rows(cur, "SELECT rule_id, rule_type, description, weight FROM core.rule_catalog ORDER BY rule_id"),
+        "rule_catalog": _rows(
+            cur,
+            "SELECT rule_id, rule_type, description, weight, direction FROM core.rule_catalog ORDER BY rule_id",
+        ),
         "disclosures": _rows(
             cur,
             """
