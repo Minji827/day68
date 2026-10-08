@@ -7,13 +7,14 @@ run_demo.bat에서 호출. 각 단계는 별도 프로세스로 실행해서 (su
 
 Usage:
     python scripts/run_demo.py [종목코드|회사명] [review_date]
-    (기본값: 005930(삼성전자), 2026-01-01. 6자리 숫자면 종목코드로, 아니면 회사명으로 처리)
+    (기본값: 005930(삼성전자), 검토 기준일은 실시간(오늘). 6자리 숫자면 종목코드로, 아니면 회사명으로 처리)
 """
 from __future__ import annotations
 
 import os
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -39,7 +40,7 @@ def start_postgres() -> None:
 
 def main() -> None:
     target = sys.argv[1] if len(sys.argv) > 1 else "005930"
-    review_date = sys.argv[2] if len(sys.argv) > 2 else "2026-01-01"
+    review_date = sys.argv[2] if len(sys.argv) > 2 else date.today().isoformat()
     is_stock_code = target.isdigit() and len(target) == 6
     corp_flag = ["--stock-code", target] if is_stock_code else ["--corp", target]
 

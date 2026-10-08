@@ -29,6 +29,9 @@ load_dotenv()
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+# PRD 기본값("핵심 N건") 그대로 - webapp.py의 /api/analyze도 이 상수를 그대로 가져다 쓴다.
+# 예전엔 둘이 따로 3/2로 어긋나 있었음 - 하나로 통일.
+AI_EXPLAIN_LIMIT = 2
 
 SYSTEM_PROMPT = """\
 당신은 금융 공시 변경 해설가입니다. 아래로 정정공시 원문(그리고 있다면 정정 전 원공시 원문)이
@@ -57,19 +60,19 @@ SYSTEM_PROMPT = """\
 
 
 def fired_rules(cur, corp_code: str, review_date: str) -> list[dict]:
-    """이 기업이 이번 검토에서 실제로 받은 Rule 목록 (weight>0, 이중계산으로 0 처리된 건 제외).
-    AI의 "의미" 파트가 이 목록 밖으로 나가지 않게 하는 근거 자료."""
+    """이 기업이 이번 검토에서 실제로 받은 Rule 목록. AI의 "의미" 파트가 이 목록 밖으로
+    나가지 않게 하는 근거 자료."""
     cur.execute(
         """
-        SELECT ce.rule_id, rc.description, ce.weight
+        SELECT ce.rule_id, rc.description, ce.score
         FROM mart.change_events ce
         JOIN core.rule_catalog rc ON rc.rule_id = ce.rule_id
-        WHERE ce.corp_code = %s AND ce.review_date = %s AND ce.weight > 0
-        ORDER BY ce.weight DESC
+        WHERE ce.corp_code = %s AND ce.review_date = %s
+        ORDER BY ce.score DESC
         """,
         (corp_code, review_date),
     )
-    return [{"rule_id": r[0], "description": r[1], "weight": r[2]} for r in cur.fetchall()]
+    return [{"rule_id": r[0], "description": r[1], "score": r[2]} for r in cur.fetchall()]
 
 
 def build_prompt(
@@ -192,7 +195,7 @@ def process_target(cur, target: dict, review_date: str) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--review-date", required=True)
-    parser.add_argument("--limit-per-company", type=int, default=2)
+    parser.add_argument("--limit-per-company", type=int, default=AI_EXPLAIN_LIMIT)
     parser.add_argument("--stock-code", help="6자리 종목코드 - 이 기업만 처리 (우선)")
     parser.add_argument("--corp-code", help="OpenDART corp_code - 이 기업만 처리")
     parser.add_argument("--corp", help="회사명 부분일치 - 이 기업만 처리 (core.companies에 이미 적재된 기업만)")
@@ -232,7 +235,7 @@ def main() -> None:
                             PARTITION BY corp_code ORDER BY rcept_dt DESC
                         ) AS rn
                         FROM core.disclosures d
-                        WHERE is_correction AND rcept_dt > %s
+                        WHERE is_correction AND rcept_dt <= %s
                           AND (%s::text IS NULL OR corp_code = %s)
                     ) ranked
                     WHERE rn <= %s

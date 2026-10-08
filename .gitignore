@@ -9,3 +9,5 @@ node_modules/
 *.log
 data/raw/
 data/mart_export.json
+data/powerbi_export/
+powerbi_export.zip

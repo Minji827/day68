@@ -24,7 +24,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT cp.corp_name, cp.priority_level, cp.priority_score, cp.change_count, string_agg(ce.description, E'\n' ORDER BY ce.weight DESC) AS change_summary FROM mart.company_priority cp JOIN mart.change_events ce ON ce.corp_code = cp.corp_code AND ce.review_date = cp.review_date WHERE cp.review_date = (SELECT max(review_date) FROM mart.company_priority) AND cp.change_count > 0 GROUP BY cp.corp_name, cp.priority_level, cp.priority_score, cp.change_count ORDER BY cp.priority_score DESC",
+        "query": "SELECT cp.corp_name, cp.priority_level, cp.priority_score, cp.change_count, string_agg(ce.description, E'\n' ORDER BY ce.score DESC) AS change_summary FROM mart.company_priority cp JOIN mart.change_events ce ON ce.corp_code = cp.corp_code AND ce.review_date = cp.review_date WHERE cp.review_date = (SELECT max(review_date) FROM mart.company_priority) AND cp.change_count > 0 GROUP BY cp.corp_name, cp.priority_level, cp.priority_score, cp.change_count ORDER BY cp.priority_level = 'emergency' DESC, cp.priority_score DESC",
         "options": {}
       },
       "id": "postgres1",

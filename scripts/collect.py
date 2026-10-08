@@ -27,9 +27,18 @@ def _write_json(path: Path, data) -> None:
 
 
 def collect_disclosures(corp_code: str, bgn_de: str, end_de: str) -> list[dict]:
+    """OpenDART list.json은 한 번 호출에 최대 100건만 준다(page_count 상한). 공시가
+    100건을 넘는 기업(예: 삼성전자는 기간 내 수천 건)은 total_page까지 순회하지 않으면
+    가장 오래된 쪽 공시 대부분이 조용히 누락된다 — 실제로 발견된 버그, 전부 순회해서 모은다."""
     print(f"[disclosures] {corp_code} {bgn_de}~{end_de}")
-    data = opendart_client.get_disclosure_list(corp_code, bgn_de, end_de, page_count=100)
-    items = data.get("list", [])
+    data = opendart_client.get_disclosure_list(corp_code, bgn_de, end_de, page_no=1, page_count=100)
+    items = list(data.get("list", []))
+    total_page = data.get("total_page") or 1
+    for page_no in range(2, total_page + 1):
+        more = opendart_client.get_disclosure_list(corp_code, bgn_de, end_de, page_no=page_no, page_count=100)
+        items.extend(more.get("list", []))
+    data["list"] = items
+    print(f"  total_count={data.get('total_count')} total_page={total_page} -> {len(items)}건 수집")
     _write_json(DATA_DIR / "disclosures" / f"{corp_code}_{bgn_de}_{end_de}.json", data)
     return items
 

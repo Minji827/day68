@@ -39,7 +39,7 @@ def export_all(cur, review_date: str | None = None) -> dict:
         ),
         "change_events": _rows(
             cur,
-            "SELECT * FROM mart.change_events WHERE review_date = %s ORDER BY corp_name, weight DESC",
+            "SELECT * FROM mart.change_events WHERE review_date = %s ORDER BY corp_name, score DESC",
             (review_date,),
         ),
         "kpi_daily": _rows(cur, "SELECT * FROM mart.kpi_daily WHERE review_date = %s", (review_date,)),
@@ -50,7 +50,10 @@ def export_all(cur, review_date: str | None = None) -> dict:
         ),
         "rule_catalog": _rows(
             cur,
-            "SELECT rule_id, rule_type, description, weight, direction FROM core.rule_catalog ORDER BY rule_id",
+            """
+            SELECT rule_id, rule_type, description, base_score, domain, is_emergency_rule
+            FROM core.rule_catalog ORDER BY rule_id
+            """,
         ),
         "disclosures": _rows(
             cur,
@@ -68,6 +71,15 @@ def export_all(cur, review_date: str | None = None) -> dict:
                    thstrm_amount, frmtrm_amount
             FROM core.financial_accounts
             ORDER BY corp_code, account_std_code, bsns_year
+            """,
+        ),
+        "quarterly_financials": _rows(
+            cur,
+            """
+            SELECT corp_code, bsns_year, quarter, account_std_code, account_std_name,
+                   curr_amount, prior_amount, fs_div
+            FROM core.quarterly_financials
+            ORDER BY corp_code, account_std_code, quarter
             """,
         ),
         "explanation_sentences": _rows(

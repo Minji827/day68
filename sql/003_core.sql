@@ -50,6 +50,15 @@ CREATE TABLE IF NOT EXISTS core.financial_accounts (
     PRIMARY KEY (corp_code, bsns_year, reprt_code, fs_div, account_std_code)
 );
 
+-- 분기/반기 보고서의 (포괄)손익계산서(IS) 항목은 DART가 thstrm_amount를 이미 "[3개월]"
+-- (그 분기만의 값)로 주고, 누적치는 별도 필드(thstrm_add_amount)로 따로 준다 - 공식
+-- 개발가이드(opendart.fss.or.kr)에 명시됨. scripts/quarterly.py가 분기별 순수값을
+-- 계산할 때 이 필드들이 필요해서 추가한다 (전에는 안 읽고 있었음 - IS 항목에 뺄셈을
+-- 잘못 적용해서 음수 매출 같은 오류가 났던 원인).
+ALTER TABLE core.financial_accounts ADD COLUMN IF NOT EXISTS thstrm_add_amount numeric;
+ALTER TABLE core.financial_accounts ADD COLUMN IF NOT EXISTS frmtrm_q_amount numeric;
+ALTER TABLE core.financial_accounts ADD COLUMN IF NOT EXISTS frmtrm_add_amount numeric;
+
 -- 금리관측(지표코드·관측일)
 CREATE TABLE IF NOT EXISTS core.rate_observations (
     stat_code text NOT NULL,

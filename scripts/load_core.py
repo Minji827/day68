@@ -61,22 +61,25 @@ def load_disclosures(cur, corp_code: str | None = None) -> None:
         cur.execute("SELECT corp_code, response FROM raw.opendart_disclosure_calls WHERE corp_code = %s", (corp_code,))
     else:
         cur.execute("SELECT corp_code, response FROM raw.opendart_disclosure_calls")
-    rows_to_insert = []
+    # rcept_no로 dedup — list.json 페이지네이션(collect.py) 중 새 공시가 끼어들면
+    # 페이지 경계가 밀려서 같은 rcept_no가 두 페이지에 걸쳐 중복으로 올 수 있다.
+    # execute_values의 ON CONFLICT DO UPDATE는 같은 커맨드 안에서 같은 행을 두 번
+    # 건드리면 에러나므로, dict로 rcept_no당 하나만 남긴다(나중 값으로 덮어써도 내용은 동일).
+    rows_by_rcept_no: dict[str, tuple] = {}
     for corp_code, response in cur.fetchall():
         for item in response.get("list", []):
             report_nm = item["report_nm"].strip()
-            rows_to_insert.append(
-                (
-                    item["rcept_no"],
-                    item["corp_code"],
-                    report_nm,
-                    clean_title(report_nm),
-                    "정정" in report_nm,
-                    item["rcept_dt"],
-                    item.get("flr_nm"),
-                    item.get("rm"),
-                )
+            rows_by_rcept_no[item["rcept_no"]] = (
+                item["rcept_no"],
+                item["corp_code"],
+                report_nm,
+                clean_title(report_nm),
+                "정정" in report_nm,
+                item["rcept_dt"],
+                item.get("flr_nm"),
+                item.get("rm"),
             )
+    rows_to_insert = list(rows_by_rcept_no.values())
     if not rows_to_insert:
         print("core.disclosures: 적재할 raw 데이터 없음")
         return
@@ -180,13 +183,30 @@ def load_financial_accounts(cur, corp_code: str | None = None) -> None:
     for raw_nm, std_code, std_name, agg_method in cur.fetchall():
         mapping.setdefault(raw_nm, []).append((std_code, std_name, agg_method))
 
+    # raw.opendart_financial_calls는 감사 추적용이라 같은 기업을 여러 번 분석하면 같은
+    # (corp_code, bsns_year, reprt_code, fs_div)로 계속 새 행이 쌓인다(의도된 설계). 여기서
+    # 그걸 전부 더하면 분석 횟수만큼 금액이 배로 불어난다 - DISTINCT ON으로 각 키의 가장
+    # 최신 호출(requested_at 기준) 한 건만 골라서 집계한다.
     if corp_code:
         cur.execute(
-            "SELECT corp_code, bsns_year, reprt_code, fs_div, response FROM raw.opendart_financial_calls WHERE corp_code = %s",
+            """
+            SELECT DISTINCT ON (corp_code, bsns_year, reprt_code, fs_div)
+                corp_code, bsns_year, reprt_code, fs_div, response
+            FROM raw.opendart_financial_calls
+            WHERE corp_code = %s
+            ORDER BY corp_code, bsns_year, reprt_code, fs_div, requested_at DESC
+            """,
             (corp_code,),
         )
     else:
-        cur.execute("SELECT corp_code, bsns_year, reprt_code, fs_div, response FROM raw.opendart_financial_calls")
+        cur.execute(
+            """
+            SELECT DISTINCT ON (corp_code, bsns_year, reprt_code, fs_div)
+                corp_code, bsns_year, reprt_code, fs_div, response
+            FROM raw.opendart_financial_calls
+            ORDER BY corp_code, bsns_year, reprt_code, fs_div, requested_at DESC
+            """
+        )
     agg: dict[tuple, dict] = {}
     for corp_code, bsns_year, reprt_code, fs_div, response in cur.fetchall():
         for item in response.get("list", []):
@@ -195,16 +215,31 @@ def load_financial_accounts(cur, corp_code: str | None = None) -> None:
                 continue
             thstrm = to_decimal(item.get("thstrm_amount"))
             frmtrm = to_decimal(item.get("frmtrm_amount"))
+            # 분기/반기 보고서의 손익계산서 항목에서만 오는 필드 - 없으면 None 그대로 둔다
+            # (분기별 계산에 쓰는 scripts/quarterly.py 참고. 연간 사업보고서나 재무상태표
+            # 항목에는 애초에 안 오는 필드라 결측이 정상).
+            thstrm_add = to_decimal(item.get("thstrm_add_amount"))
+            frmtrm_q = to_decimal(item.get("frmtrm_q_amount"))
+            frmtrm_add = to_decimal(item.get("frmtrm_add_amount"))
             for std_code, std_name, agg_method in mapping[account_nm]:
                 key = (corp_code, bsns_year, reprt_code, fs_div, std_code)
                 if key not in agg:
-                    agg[key] = {"std_name": std_name, "thstrm": thstrm or Decimal(0), "frmtrm": frmtrm or Decimal(0)}
+                    agg[key] = {
+                        "std_name": std_name, "thstrm": thstrm or Decimal(0), "frmtrm": frmtrm or Decimal(0),
+                        "thstrm_add": thstrm_add, "frmtrm_q": frmtrm_q, "frmtrm_add": frmtrm_add,
+                    }
                 else:
                     agg[key]["thstrm"] += thstrm or Decimal(0)
                     agg[key]["frmtrm"] += frmtrm or Decimal(0)
+                    # 합산 대상 세부계정이 여러 개면(예: 장단기 차입금 합산) 이 분기 전용
+                    # 필드들도 같이 더한다 - None끼리는 None 유지, 하나라도 있으면 그만큼만 더함.
+                    for f, v in (("thstrm_add", thstrm_add), ("frmtrm_q", frmtrm_q), ("frmtrm_add", frmtrm_add)):
+                        if v is not None:
+                            agg[key][f] = (agg[key][f] or Decimal(0)) + v
 
     rows = [
-        (corp_code, bsns_year, reprt_code, fs_div, std_code, v["std_name"], v["thstrm"], v["frmtrm"])
+        (corp_code, bsns_year, reprt_code, fs_div, std_code, v["std_name"], v["thstrm"], v["frmtrm"],
+         v["thstrm_add"], v["frmtrm_q"], v["frmtrm_add"])
         for (corp_code, bsns_year, reprt_code, fs_div, std_code), v in agg.items()
     ]
     if not rows:
@@ -215,11 +250,14 @@ def load_financial_accounts(cur, corp_code: str | None = None) -> None:
         """
         INSERT INTO core.financial_accounts
             (corp_code, bsns_year, reprt_code, fs_div, account_std_code, account_std_name,
-             thstrm_amount, frmtrm_amount)
+             thstrm_amount, frmtrm_amount, thstrm_add_amount, frmtrm_q_amount, frmtrm_add_amount)
         VALUES %s
         ON CONFLICT (corp_code, bsns_year, reprt_code, fs_div, account_std_code) DO UPDATE SET
             thstrm_amount = EXCLUDED.thstrm_amount,
-            frmtrm_amount = EXCLUDED.frmtrm_amount
+            frmtrm_amount = EXCLUDED.frmtrm_amount,
+            thstrm_add_amount = EXCLUDED.thstrm_add_amount,
+            frmtrm_q_amount = EXCLUDED.frmtrm_q_amount,
+            frmtrm_add_amount = EXCLUDED.frmtrm_add_amount
         """,
         rows,
     )

@@ -14,6 +14,8 @@
     --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
     --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
     --critical-bg: #fdeceb; --warning-bg: #fef6e3; --good-bg: #e8f8e8; --muted-bg: #efeeea;
+    --prior: #9a988f;
+    --emergency: #a81b4c; --emergency-bg: #fbe3ea;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -25,6 +27,8 @@
       --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
       --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #e66767;
       --critical-bg: #3a1f1f; --warning-bg: #352c15; --good-bg: #163316; --muted-bg: #242422;
+      --prior: #6b6a64;
+      --emergency: #ff6b9d; --emergency-bg: #3a1526;
     }
   }
   :root[data-theme="dark"] {
@@ -36,6 +40,8 @@
     --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
     --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #e66767;
     --critical-bg: #3a1f1f; --warning-bg: #352c15; --good-bg: #163316; --muted-bg: #242422;
+    --prior: #6b6a64;
+    --emergency: #ff6b9d; --emergency-bg: #3a1526;
   }
   * { box-sizing: border-box; }
   body {
@@ -109,6 +115,8 @@
   .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 
   .rank-row { display: flex; align-items: center; gap: 10px; }
+  .rank-row[data-corp] { cursor: pointer; padding: 3px 6px; margin: -3px -6px; border-radius: 6px; }
+  .rank-row[data-corp]:hover { background: var(--muted-bg); }
   .rank-name { width: 84px; flex-shrink: 0; font-size: 12px; font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rank-track { flex: 1; height: 16px; background: var(--muted-bg); border-radius: 4px; position: relative; overflow: hidden; }
   .rank-fill { height: 100%; border-radius: 4px 0 0 4px; }
@@ -125,6 +133,7 @@
   .delta-down { color: var(--good); font-weight: 600; }
 
   .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; }
+  .badge-emergency { background: var(--emergency-bg); color: var(--emergency); font-weight: 800; }
   .badge-high { background: var(--critical-bg); color: var(--critical); }
   .badge-mid { background: var(--warning-bg); color: #9a6a00; }
   .badge-low { background: var(--good-bg); color: var(--good); }
@@ -132,6 +141,7 @@
   .rule-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--muted-bg); color: var(--text-secondary); font-family: "IBM Plex Mono", monospace; }
   .rule-chip.positive { background: var(--good-bg); color: var(--good); }
   .rule-chip.negative { background: var(--critical-bg); color: var(--critical); }
+  .rule-chip.neutral { background: var(--muted-bg); color: var(--text-secondary); }
   .reason-headline { font-size: 13px; font-weight: 600; color: var(--text-primary); line-height: 1.4; }
   .reason-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .transition-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 99px; font-size: 10.5px; font-weight: 700; }
@@ -142,6 +152,33 @@
   .section-num { width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .section-title-main { font-size: 14px; font-weight: 700; }
   .section-title-sub { font-size: 11px; color: var(--text-muted); }
+
+  .chart-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .metric-checks { display: flex; gap: 8px; flex-wrap: wrap; }
+  .metric-check { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: var(--text-secondary);
+    cursor: pointer; user-select: none; padding: 5px 10px 5px 7px; border-radius: 8px; background: var(--muted-bg); border: 1px solid var(--border); }
+  .metric-check input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .metric-check .box { width: 15px; height: 15px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: transparent; font-size: 10px; font-weight: 900; }
+  .metric-check input:checked + .box { background: var(--chk, var(--brand)); border-color: var(--chk, var(--brand)); color: #fff; }
+  .toggle-btn { font-family: inherit; font-size: 11.5px; font-weight: 700; padding: 6px 13px; border-radius: 99px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+  .toggle-btn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
+  .toggle-btn.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .toggle-btn.on .dot { background: #fff; }
+  .chart-stage { position: relative; }
+  .chart-stage svg { cursor: crosshair; touch-action: none; display: block; width: 100%; }
+  .chart-tip { position: absolute; pointer-events: none; z-index: 2; background: var(--surface-raised); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 11.5px; box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+    min-width: 128px; transform: translate(-50%, -100%); margin-top: -10px; }
+  .chart-tip .tip-q { font-weight: 700; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .chart-tip .tip-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .chart-tip .tip-row + .tip-row { margin-top: 3px; }
+  .chart-tip .tip-row .k { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); }
+  .chart-tip .tip-row .sw { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+  .chart-tip .tip-row .v { font-family: "IBM Plex Mono", monospace; font-weight: 700; }
+  .chart-tip .tip-row .v.prior { color: var(--text-muted); font-weight: 500; }
+  .chart-hint { font-size: 10.5px; color: var(--text-muted); }
   .ctx-line { display: flex; align-items: center; gap: 8px; background: var(--warning-bg); border-radius: 9px; padding: 9px 13px; font-size: 11.5px; color: #7a5500; line-height: 1.5; }
   .ctx-line svg { width: 15px; height: 15px; flex-shrink: 0; color: #9a6a00; }
   a.dart-link { color: var(--brand); text-decoration: none; font-weight: 600; font-size: 11.5px; white-space: nowrap; }
@@ -219,7 +256,7 @@
   <main class="main">
     <div class="analyze-bar">
       <input type="text" id="a-stock-code" placeholder="종목코드 (예: 005930)" maxlength="6">
-      <input type="date" id="a-review-date" value="2026-01-01">
+      <input type="date" id="a-review-date">
       <button class="btn-primary" id="a-run">분석 시작</button>
       <div class="analyze-status" id="a-status">종목코드를 입력하면 OpenDART에서 실시간으로 수집 → 분석 → AI 해설까지 실행합니다.</div>
     </div>
@@ -241,7 +278,7 @@
       <div class="grid-3">
         <div class="panel">
           <div class="panel-head"><div class="panel-title">기업별 재검토 우선순위</div>
-            <div class="legend"><div class="legend-item"><span class="legend-dot" style="background:var(--critical)"></span>높음</div><div class="legend-item"><span class="legend-dot" style="background:var(--warning)"></span>중간</div><div class="legend-item"><span class="legend-dot" style="background:var(--good)"></span>낮음</div></div>
+            <div class="legend"><div class="legend-item"><span class="legend-dot" style="background:var(--emergency)"></span>긴급확인</div><div class="legend-item"><span class="legend-dot" style="background:var(--critical)"></span>높음</div><div class="legend-item"><span class="legend-dot" style="background:var(--warning)"></span>중간</div><div class="legend-item"><span class="legend-dot" style="background:var(--good)"></span>낮음</div></div>
           </div>
           <div id="rank-chart" style="display:flex; flex-direction:column; gap:9px;"></div>
         </div>
@@ -283,7 +320,20 @@
           <div class="panel"><div class="panel-head"><div class="panel-title">주요 재무 변화</div></div><div class="table-wrap"><table id="detail-fin-table"></table></div></div>
           <div class="panel"><div class="panel-head"><div class="panel-title">적용된 Rule</div></div><div style="display:flex; flex-direction:column; gap:8px;" id="detail-rules"></div></div>
         </div>
-        <div class="panel"><div class="panel-head"><div class="panel-title">연도별 주요 지표 추이 (매출액 · 영업이익 · 영업활동현금흐름)</div></div><div id="slope-chart"></div></div>
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">분기별 지표 추이 (전년 비교)</div>
+            <div class="chart-controls">
+              <div class="metric-checks" id="q-metric-checks">
+                <label class="metric-check" style="--chk:var(--series-1);"><input type="checkbox" value="REVENUE" checked><span class="box">✓</span>매출액</label>
+                <label class="metric-check" style="--chk:var(--series-2);"><input type="checkbox" value="OP_INCOME" checked><span class="box">✓</span>영업이익</label>
+                <label class="metric-check" style="--chk:var(--series-3);"><input type="checkbox" value="OCF" checked><span class="box">✓</span>영업활동현금흐름</label>
+              </div>
+              <button class="toggle-btn on" id="q-overlay-toggle"><span class="dot"></span>작년 함께 보기 ON</button>
+            </div>
+          </div>
+          <div id="slope-chart"></div>
+        </div>
       </div>
 
       <div class="section-block">
@@ -322,26 +372,46 @@
   const fmtDate = (s) => s ? s.replace(/-/g, ".") : "—";
   const dartUrl = (rcept) => `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rcept}`;
   const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  const levelColor = { high: "var(--critical)", mid: "var(--warning)", low: "var(--good)", none: "var(--text-muted)" };
-  const levelLabel = { high: "높음", mid: "중간", low: "낮음", none: "없음" };
-  const levelBadgeClass = { high: "badge-high", mid: "badge-mid", low: "badge-low", none: "badge-none" };
+  const levelColor = { emergency: "var(--emergency)", high: "var(--critical)", mid: "var(--warning)", low: "var(--good)", none: "var(--text-muted)" };
+  const levelLabel = { emergency: "긴급확인", high: "높음", mid: "중간", low: "낮음", none: "없음" };
+  const levelBadgeClass = { emergency: "badge-emergency", high: "badge-high", mid: "badge-mid", low: "badge-low", none: "badge-none" };
 
-  function ruleDirection(ruleId) {
-    const cat = (DATA && DATA.rule_catalog || []).find((c) => c.rule_id === ruleId);
-    return cat ? cat.direction : "negative";
+  // v4.0: "점수를 더해서 등급을 안 만든다" - 기업 등급은 대표 사건 하나로 정해지므로
+  // positive_score/forced_high/15점 cap 표시는 전부 사라졌다. 대신 대표사건 외에
+  // 등급 "중간" 이상인 추가 사건이 있으면(등급 자체는 안 바꿈, 정보성) 알린다.
+  function additionalEventsTagHtml(cp) {
+    return (cp.additional_important_events > 0)
+      ? `<span class="badge badge-mid" title="대표 사건 외에 등급 '중간' 이상인 사건이 더 있음(등급 산정에는 반영 안 됨)">외 ${cp.additional_important_events}건</span>` : "";
   }
-  function ruleChipHtml(ruleId) {
-    const dir = ruleDirection(ruleId);
-    const arrow = dir === "positive" ? "▲" : "▼";
+
+  // v4.0: 양방향 룰(F1/F2/F3/F6/F7)은 같은 rule_id라도 이벤트마다 direction이 달라서
+  // rule_catalog에서 join 못 함 - change_events.direction을 직접 쓰거나(이벤트 row가
+  // 있을 때), 없으면 고정 방향 룰의 기본값으로 떨어진다.
+  const RULE_DIRECTION_DEFAULT = {
+    F1: "negative", F2: "negative", F3: "negative", F4: "negative", F5: "negative",
+    F6: "positive", F7: "negative", F8: "negative",
+    D1: "negative", D2: "negative", D3: "negative", D4: "neutral", D5: "negative",
+    D6A: "positive", D6B: "positive", D6C: "positive", D6D: "negative",
+    D7: "negative", D8: "negative", D9: "negative",
+  };
+  function ruleDirectionFor(corpCode, ruleId) {
+    const ev = (DATA && DATA.change_events || []).find((e) => e.corp_code === corpCode && e.rule_id === ruleId);
+    return (ev && ev.direction) || RULE_DIRECTION_DEFAULT[ruleId] || "negative";
+  }
+  function ruleChipHtml(ruleId, direction) {
+    const dir = direction || RULE_DIRECTION_DEFAULT[ruleId] || "negative";
+    const arrow = dir === "positive" ? "▲" : (dir === "neutral" ? "●" : "▼");
     return `<span class="rule-chip ${dir}">${arrow} ${ruleId}</span>`;
   }
-  // 상태전환이 핵심인 Rule(F1/F2=흑자→적자, F6=적자→흑자)은 %가 아니라 전환 자체를
-  // 보여준다 — 멘토 피드백 ②. -127% 같은 숫자는 부호가 바뀔 때 오해를 줄 수 있어서다.
-  const TRANSITION_RULES = { F1: "to-negative", F2: "to-negative", F6: "to-positive" };
-  function financialChangeCell(ruleId, rate) {
+  // 부호전환이 핵심인 Rule(F1=영업이익, F2=현금흐름)은 %가 아니라 전환 자체를 보여준다
+  // — 멘토 피드백 ②. -127% 같은 숫자는 부호가 바뀔 때 오해를 줄 수 있어서다. F6/F7은
+  // "유지 중 증감"이라 전환이 아니므로 %로 표시(v4.0 — 기존 F6은 전환 룰이었으나 새
+  // F1에 흡수됨).
+  const TRANSITION_RULES = { F1: true, F2: true };
+  function financialChangeCell(ruleId, rate, direction) {
     if (TRANSITION_RULES[ruleId]) {
-      const dir = TRANSITION_RULES[ruleId];
-      return `<span class="transition-badge ${dir}">${dir === "to-positive" ? "적자→흑자" : "흑자→적자"} 전환</span>`;
+      const toPositive = direction === "positive";
+      return `<span class="transition-badge ${toPositive ? "to-positive" : "to-negative"}">${toPositive ? "적자→흑자" : "흑자→적자"} 전환</span>`;
     }
     return rate != null
       ? `<span class="${rate >= 0 ? "delta-up" : "delta-down"}">${fmtPct(rate)}</span>`
@@ -364,13 +434,26 @@
   }
   window.addEventListener("error", (e) => showError("window", e.error || e.message));
 
+  function showView(viewName) {
+    document.querySelectorAll(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.view === viewName));
+    document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + viewName));
+  }
+
   document.querySelectorAll(".nav-item").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
-      document.getElementById("view-" + btn.dataset.view).classList.add("active");
-    });
+    btn.addEventListener("click", () => showView(btn.dataset.view));
+  });
+
+  // 기업별 재검토 우선순위에서 기업을 클릭하면 "기업 상세 분석" 탭으로 바로 이동해서
+  // 그 기업만 보여준다 (사용자 요청 — 요약 랭킹 → 그 기업 전체 상세로 드릴다운).
+  function goToDetail(corpCode) {
+    const dCorpSelect = document.getElementById("d-corp");
+    dCorpSelect.value = corpCode;
+    showView("detail");
+    safe("renderDetail", () => renderDetail(corpCode));
+  }
+  document.getElementById("rank-chart").addEventListener("click", (e) => {
+    const row = e.target.closest(".rank-row[data-corp]");
+    if (row) goToDetail(row.dataset.corp);
   });
 
   function companyById() {
@@ -439,6 +522,20 @@
 
     corpSelect.onchange = () => renderSummary(corpSelect.value === "all" ? rankedForSelect[0].corp_code : corpSelect.value);
     dCorpSelect.onchange = () => renderDetail(dCorpSelect.value);
+
+    // 분기 차트의 체크박스/토글은 기업을 바꿔도 선택 상태가 유지되게, 매 렌더마다 다시
+    // 그리지 않고 .onclick/.onchange 프로퍼티 할당(= 덮어쓰기)만 한다 - addEventListener면
+    // renderAll()이 여러 번 불릴 때(재분석 등) 리스너가 계속 쌓인다.
+    document.querySelectorAll("#q-metric-checks input").forEach((c) => {
+      c.onchange = () => renderQuarterlyChart(dCorpSelect.value);
+    });
+    const qToggle = document.getElementById("q-overlay-toggle");
+    qToggle.onclick = () => {
+      qShowOverlay = !qShowOverlay;
+      qToggle.classList.toggle("on", qShowOverlay);
+      qToggle.innerHTML = `<span class="dot"></span>작년 함께 보기 ${qShowOverlay ? "ON" : "OFF"}`;
+      renderQuarterlyChart(dCorpSelect.value);
+    };
   }
 
   function renderKPIs() {
@@ -446,7 +543,7 @@
     const corrections = DATA.disclosures.filter((d) => d.is_correction).length;
     const financialEvents = DATA.change_events.filter((e) => e.change_type === "financial").length;
     const changedCompanies = DATA.company_priority.filter((c) => c.change_count > 0).length;
-    const priorityCompanies = DATA.company_priority.filter((c) => c.priority_level === "high" || c.priority_level === "mid").length;
+    const priorityCompanies = DATA.company_priority.filter((c) => ["emergency", "high", "mid"].includes(c.priority_level)).length;
     const kpis = [
       { label: "재검토 우선 기업 수", value: priorityCompanies, unit: "개사", icon: "flag", color: "var(--critical)", emphasis: true },
       { label: "변화 발생 기업 수", value: changedCompanies, unit: "개사", icon: "building", color: "var(--brand)" },
@@ -470,9 +567,9 @@
   }
 
   function topReason(corpCode) {
-    const events = DATA.change_events.filter((e) => e.corp_code === corpCode && e.weight > 0);
+    const events = DATA.change_events.filter((e) => e.corp_code === corpCode);
     if (!events.length) return null;
-    return events.slice().sort((a, b) => b.weight - a.weight)[0].description;
+    return events.slice().sort((a, b) => b.score - a.score)[0].description;
   }
   function renderRankChart() {
     const ranked = DATA.company_priority.slice().sort((a, b) => b.priority_score - a.priority_score);
@@ -481,12 +578,13 @@
       const pct = Math.max(6, (r.priority_score / max) * 100);
       const scoreLabel = r.priority_level === "none" ? "변화없음" : r.priority_score;
       const reason = topReason(r.corp_code);
-      return `<div class="rank-row">
+      return `<div class="rank-row" data-corp="${r.corp_code}" title="클릭하면 이 기업 상세 분석으로 이동">
           <div class="rank-name">${esc(r.corp_name)}</div>
           <div style="flex:1; min-width:0;">
             <div class="rank-track"><div class="rank-fill" style="width:${pct}%; background:${levelColor[r.priority_level]}"></div></div>
             ${reason ? `<div class="reason-sub" title="${esc(reason)}">${esc(reason)}</div>` : ""}
           </div>
+          <div style="display:flex; gap:4px; align-items:center;">${additionalEventsTagHtml(r)}</div>
           <div class="rank-score num" style="width:auto; font-size:10.5px;">${scoreLabel}</div>
         </div>`;
     }).join("");
@@ -528,31 +626,31 @@
     const cp = DATA.company_priority.find((c) => c.corp_code === corpCode);
     if (!cp) { document.getElementById("sel-summary").innerHTML = '<div class="empty-note">데이터 없음</div>'; return; }
     const co = companyById()[cp.corp_code];
-    const events = DATA.change_events.filter((e) => e.corp_code === cp.corp_code && e.weight > 0);
+    const events = DATA.change_events.filter((e) => e.corp_code === cp.corp_code);
     const rules = [...new Set(events.map((e) => e.rule_id))].sort();
-    const topEvents = events.slice().sort((a, b) => b.weight - a.weight).slice(0, 2);
+    const topEvents = events.slice().sort((a, b) => b.score - a.score).slice(0, 2);
     document.getElementById("sel-summary").innerHTML = `
       <div class="panel-head"><div class="panel-title">선택 기업 변화 요약</div></div>
-      <div class="summary-id"><span class="corp">${esc(cp.corp_name)}</span><span class="code num">(${co.stock_code})</span><span class="badge ${levelBadgeClass[cp.priority_level]}">${levelLabel[cp.priority_level]}</span></div>
+      <div class="summary-id"><span class="corp">${esc(cp.corp_name)}</span><span class="code num">(${co.stock_code})</span><span class="badge ${levelBadgeClass[cp.priority_level]}">${levelLabel[cp.priority_level]}</span>${additionalEventsTagHtml(cp)}</div>
       <div>
         <div style="font-size:11px;font-weight:700;color:var(--text-secondary);margin-bottom:6px;">왜 지금 다시 봐야 하는가</div>
-        ${topEvents.length
-          ? topEvents.map((e) => `<div class="reason-headline">· ${esc(e.description)}</div>`).join("")
+        ${cp.reason_text
+          ? `<div class="reason-headline">· ${esc(cp.reason_text)}</div>`
           : '<div class="reason-headline" style="color:var(--text-muted);font-weight:400;">유의미한 변화 없음</div>'}
       </div>
       <div class="summary-stats">
-        <div class="row"><span>재검토 우선순위 점수</span><b>${cp.priority_score}점</b></div>
+        <div class="row"><span>대표 사건 점수 (1~10, 등급 내 순서용)</span><b>${cp.priority_score ?? "—"}점</b></div>
         <div class="row"><span>신규 공시</span><b>${DATA.disclosures.filter(d=>d.corp_code===cp.corp_code && !d.is_correction).length}건</b></div>
         <div class="row"><span>정정 공시</span><b>${DATA.disclosures.filter(d=>d.corp_code===cp.corp_code && d.is_correction).length}건</b></div>
         <div class="row"><span>재무 변화</span><b>${cp.financial_rule_count}건</b></div>
       </div>
-      <div class="summary-rules">${rules.map(ruleChipHtml).join("")}</div>`;
+      <div class="summary-rules">${rules.map((r) => ruleChipHtml(r, ruleDirectionFor(cp.corp_code, r))).join("")}</div>`;
   }
 
   function renderFinTop() {
-    const items = DATA.change_events.filter((e) => e.change_type === "financial" && e.weight > 0).slice().sort((a, b) => b.weight - a.weight || Math.abs(b.change_rate || 0) - Math.abs(a.change_rate || 0));
+    const items = DATA.change_events.filter((e) => e.change_type === "financial").slice().sort((a, b) => b.score - a.score || Math.abs(b.change_rate || 0) - Math.abs(a.change_rate || 0));
     document.getElementById("fin-top-title").textContent = `주요 재무 변화 (전체 ${items.length}건)`;
-    const rows = items.map((e) => `<tr><td class="name-cell">${esc(e.corp_name)}</td><td>${esc(e.account_std_name || "")}</td><td class="num-cell">${fmtNum(e.old_value)}</td><td class="num-cell">${fmtNum(e.new_value)}</td><td class="num-cell">${financialChangeCell(e.rule_id, e.change_rate)}</td><td>${ruleChipHtml(e.rule_id)}</td></tr>`).join("");
+    const rows = items.map((e) => `<tr><td class="name-cell">${esc(e.corp_name)}</td><td>${esc(e.account_std_name || "")}</td><td class="num-cell">${fmtNum(e.old_value)}</td><td class="num-cell">${fmtNum(e.new_value)}</td><td class="num-cell">${financialChangeCell(e.rule_id, e.change_rate != null ? e.change_rate / 100 : null, e.direction)}</td><td>${ruleChipHtml(e.rule_id, e.direction)}</td></tr>`).join("");
     document.getElementById("fin-top-table").innerHTML = `<thead><tr><th>기업</th><th>지표</th><th>이전</th><th>최신</th><th>변화</th><th>Rule</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty-note">탐지된 재무 변화 없음</td></tr>'}</tbody>`;
   }
   function renderCorrTop() {
@@ -580,6 +678,183 @@
     return byAccount;
   }
 
+  // ---- 분기별 지표 추이 (기업 상세 1번 섹션 차트) ----
+  const Q_METRICS = {
+    REVENUE: { label: "매출액", color: "var(--series-1)" },
+    OP_INCOME: { label: "영업이익", color: "var(--series-2)" },
+    OCF: { label: "영업활동현금흐름", color: "var(--series-3)" },
+  };
+  let qShowOverlay = true;
+  // 매번 "억"을 안 붙이고, 차트 아래에 "단위: 억원" 캡션 한 번만 표시한다(renderQuarterlyChart 끝부분).
+  const fmtEok = (n) => n == null ? "—" : (n / 1e8).toLocaleString("ko-KR", { maximumFractionDigits: 1 });
+
+  function renderQuarterlyChart(corpCode) {
+    const host = document.getElementById("slope-chart");
+    const checks = Array.prototype.slice.call(document.querySelectorAll("#q-metric-checks input"));
+    const selected = Object.keys(Q_METRICS).filter((k) => checks.some((c) => c.value === k && c.checked));
+    const qRows = (DATA.quarterly_financials || []).filter((q) => q.corp_code === corpCode);
+
+    if (!qRows.length) {
+      host.innerHTML = '<div class="empty-note">분기별 데이터 없음 — 이 기업을 다시 분석하면 1·2분기(또는 그 이상) 보고서가 공시된 만큼 채워집니다.</div>';
+      return;
+    }
+    if (!selected.length) {
+      host.innerHTML = '<div class="empty-note">지표를 1개 이상 선택하세요</div>';
+      return;
+    }
+
+    // account_std_code -> quarter(1~4) -> {curr_amount, prior_amount}
+    const byAccount = {};
+    qRows.forEach((r) => { (byAccount[r.account_std_code] ??= {})[r.quarter] = r; });
+    // 작년은 항상 4분기 전부 나오고(이미 지난 해라 보고서가 다 있음), 올해는 아직 안 나온
+    // 분기(예: 3분기는 11월에야 공시)는 비어있는 게 정상 - curr_amount가 없어도 prior_amount만
+    // 있으면 그 분기를 보여준다(올해 막대만 비워두고 작년 막대는 그대로 보여줌).
+    const quarters = [1, 2, 3, 4].filter((q) => selected.some((k) => byAccount[k]?.[q]?.curr_amount != null || byAccount[k]?.[q]?.prior_amount != null));
+    if (!quarters.length) {
+      host.innerHTML = '<div class="empty-note">선택한 지표의 분기 데이터 없음</div>';
+      return;
+    }
+
+    const W = 620, H = 220, padL = 46, padR = 150, padT = 20, padB = 26;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const n = quarters.length;
+    const xPos = (i) => padL + ((i + 0.5) / n) * plotW;
+
+    const currStacks = quarters.map((q) => selected.reduce((sum, k) => sum + (byAccount[k]?.[q]?.curr_amount ?? 0), 0));
+    const priorStacks = qShowOverlay ? quarters.map((q) => selected.reduce((sum, k) => sum + (byAccount[k]?.[q]?.prior_amount ?? 0), 0)) : [];
+    const allVals = currStacks.concat(priorStacks);
+    const maxV = Math.max(1, ...allVals) * 1.15;
+    const y = (v) => padT + plotH - (Math.max(0, v) / maxV) * plotH;
+
+    const slotW = plotW / n;
+    const barW = qShowOverlay ? slotW * 0.3 : slotW * 0.42;
+    const gap = slotW * 0.08;
+
+    let svg = `<line x1="${padL}" y1="${padT+plotH}" x2="${W-padR}" y2="${padT+plotH}" stroke="var(--baseline)" stroke-width="1"/>`;
+    [0.5, 1].forEach((f) => {
+      const yy = padT + plotH * (1 - f);
+      svg += `<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="var(--grid)" stroke-width="1" stroke-dasharray="2 4"/><text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9.5" fill="var(--text-muted)">${fmtEok(f*maxV/1.15)}</text>`;
+    });
+
+    const geoms = quarters.map((q, i) => {
+      const cx = xPos(i);
+      const currX = qShowOverlay ? cx - gap / 2 - barW : cx - barW / 2;
+      const priorX = cx + gap / 2;
+      const hasCurr = selected.some((k) => byAccount[k]?.[q]?.curr_amount != null);
+      let running = 0;
+      const segs = selected.map((k) => {
+        const v = byAccount[k]?.[q]?.curr_amount ?? 0;
+        const seg = { key: k, from: running, to: running + v, v };
+        running += v;
+        return seg;
+      });
+      let priorRunning = 0;
+      const priorSegs = qShowOverlay ? selected.map((k) => {
+        const v = byAccount[k]?.[q]?.prior_amount ?? 0;
+        const seg = { key: k, from: priorRunning, to: priorRunning + v, v };
+        priorRunning += v;
+        return seg;
+      }) : [];
+      return { q, currX, segs, priorX, priorSegs, hasCurr, total: running, priorTotal: priorRunning };
+    });
+
+    geoms.forEach((g) => {
+      g.priorSegs.forEach((seg) => {
+        svg += `<rect x="${g.priorX}" y="${y(seg.to)}" width="${barW}" height="${y(seg.from)-y(seg.to)}" fill="${Q_METRICS[seg.key].color}" fill-opacity="0.3"/>`;
+      });
+      // 올해 그 분기 보고서가 아직 하나도 안 올라왔으면(hasCurr=false) 0 높이 막대를
+      // 그리는 대신, "미공시"라고 적어서 "실제로 0"과 헷갈리지 않게 한다.
+      if (g.hasCurr) {
+        g.segs.forEach((seg) => {
+          svg += `<rect x="${g.currX}" y="${y(seg.to)}" width="${barW}" height="${y(seg.from)-y(seg.to)}" fill="${Q_METRICS[seg.key].color}"/>`;
+        });
+      } else {
+        svg += `<text x="${g.currX + barW/2}" y="${y(0)-6}" text-anchor="middle" font-size="9.5" fill="var(--text-muted)">미공시</text>`;
+      }
+    });
+    const lastIdx = geoms.length - 1;
+    const lastG = geoms[lastIdx];
+    if (lastG.hasCurr) {
+      svg += `<text x="${lastG.currX + barW/2}" y="${y(lastG.total)-9}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--text-primary)" class="num">${fmtEok(lastG.total)}</text>`;
+    }
+    if (lastG.priorSegs.length) {
+      svg += `<text x="${lastG.priorX + barW/2}" y="${y(lastG.priorTotal)-9}" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--text-muted)" class="num">${fmtEok(lastG.priorTotal)}</text>`;
+    }
+    quarters.forEach((q, i) => {
+      svg += `<text x="${xPos(i)}" y="${H-8}" text-anchor="middle" font-size="11" fill="var(--text-secondary)">${q}Q</text>`;
+    });
+
+    const annoTop = H / 2 - (selected.length - 1) * 24;
+    selected.forEach((k, idx) => {
+      const priorSum = quarters.reduce((s, q) => s + (byAccount[k]?.[q]?.prior_amount ?? 0), 0);
+      const currSum = quarters.reduce((s, q) => s + (byAccount[k]?.[q]?.curr_amount ?? 0), 0);
+      const pct = priorSum ? ((currSum - priorSum) / priorSum) * 100 : null;
+      const yy = annoTop + idx * 48;
+      svg += `<text x="${W-padR+18}" y="${yy-6}" font-size="11" fill="var(--text-secondary)">${esc(Q_METRICS[k].label)}</text>`;
+      svg += `<text x="${W-padR+18}" y="${yy+12}" font-size="13" font-weight="700" fill="${pct==null ? 'var(--text-muted)' : (pct<0 ? 'var(--critical)' : 'var(--good)')}" class="num">${pct==null ? '—' : fmtPct(pct/100)}</text>`;
+    });
+
+    host.innerHTML = `<div class="chart-stage"><svg viewBox="0 0 ${W} ${H}" width="100%">${svg}<g class="qc-crosshair"></g></svg></div>` +
+      `<div class="legend" style="margin-top:8px;">` +
+      selected.map((k) => `<div class="legend-item"><span class="legend-dot" style="background:${Q_METRICS[k].color}"></span>${esc(Q_METRICS[k].label)}</div>`).join("") +
+      (qShowOverlay ? `<div class="legend-item"><span class="legend-dot" style="background:var(--prior)"></span>작년 (선택한 지표만, 연한 색)</div>` : "") +
+      `</div><div class="chart-hint" style="margin-top:4px;">단위: 억원 · 분기를 클릭하면 그 분기 수치가 말풍선으로 뜹니다.</div>`;
+
+    wireQuarterlyInteraction(host, geoms, y, selected, barW);
+  }
+
+  function wireQuarterlyInteraction(host, geoms, y, selected, barW) {
+    const stage = host.querySelector(".chart-stage");
+    const svgEl = stage.querySelector("svg");
+    const layer = svgEl.querySelector(".qc-crosshair");
+
+    function showAt(clientX) {
+      const rect = svgEl.getBoundingClientRect();
+      const relX = (clientX - rect.left) / rect.width;
+      const i = Math.max(0, Math.min(geoms.length - 1, Math.floor(relX * geoms.length)));
+      const g = geoms[i];
+
+      let hl = "";
+      if (g.hasCurr) {
+        g.segs.forEach((seg) => {
+          hl += `<rect x="${g.currX-1.5}" y="${y(seg.to)-1.5}" width="${barW+3}" height="${y(seg.from)-y(seg.to)+3}" fill="none" stroke="var(--text-primary)" stroke-width="1" opacity="0.35"/>`;
+        });
+      }
+      if (g.priorSegs.length) {
+        hl += `<rect x="${g.priorX-1.5}" y="${y(g.priorTotal)-1.5}" width="${barW+3}" height="${y(0)-y(g.priorTotal)+3}" fill="none" stroke="var(--text-primary)" stroke-width="1" opacity="0.35"/>`;
+      }
+      layer.innerHTML = hl;
+
+      const old = stage.querySelector(".chart-tip");
+      if (old) old.remove();
+      let rows = selected.map((k) => {
+        const seg = g.segs.find((s) => s.key === k);
+        const valText = g.hasCurr ? `${fmtNum(seg ? seg.v : 0)}원` : "미공시";
+        return `<div class="tip-row"><span class="k"><span class="sw" style="background:${Q_METRICS[k].color}"></span>${esc(Q_METRICS[k].label)}</span><span class="v">${valText}</span></div>`;
+      }).join("");
+      if (g.priorSegs.length) {
+        rows += `<div class="tip-row" style="margin-top:5px; padding-top:5px; border-top:1px solid var(--border);"><span class="k">작년 합계</span><span class="v prior">${fmtNum(g.priorTotal)}원</span></div>`;
+      }
+      const tip = document.createElement("div");
+      tip.className = "chart-tip";
+      const svgW = 620;
+      tip.style.left = ((g.currX + barW / 2) / svgW * 100) + "%";
+      tip.style.top = "10%";
+      tip.innerHTML = `<div class="tip-q">${g.q}분기</div>${rows}`;
+      stage.appendChild(tip);
+    }
+    function hide() {
+      layer.innerHTML = "";
+      const tip = stage.querySelector(".chart-tip");
+      if (tip) tip.remove();
+    }
+
+    svgEl.addEventListener("mousemove", (e) => showAt(e.clientX));
+    svgEl.addEventListener("click", (e) => showAt(e.clientX));
+    svgEl.addEventListener("mouseleave", hide);
+    svgEl.addEventListener("touchstart", (e) => { if (e.touches[0]) showAt(e.touches[0].clientX); }, { passive: true });
+  }
+
   function renderDetail(corpCode) {
     const cp = DATA.company_priority.find((c) => c.corp_code === corpCode);
     const co = companyById()[corpCode];
@@ -590,12 +865,12 @@
     const corrDiscl = DATA.disclosures.filter((d) => d.corp_code === corpCode && d.is_correction).sort((a,b)=>b.rcept_dt.localeCompare(a.rcept_dt));
 
     document.getElementById("detail-banner").innerHTML = `
-      <div class="summary-id"><span class="corp" style="font-size:17px;">${esc(co.corp_name)}</span><span class="code num">(${co.stock_code})</span><span class="badge ${levelBadgeClass[cp.priority_level]}">${levelLabel[cp.priority_level]}</span></div>
-      <div class="divider"></div><div class="stat"><div class="v">${cp.priority_score}점</div><div class="l">재검토 우선순위</div></div>
+      <div class="summary-id"><span class="corp" style="font-size:17px;">${esc(co.corp_name)}</span><span class="code num">(${co.stock_code})</span><span class="badge ${levelBadgeClass[cp.priority_level]}">${levelLabel[cp.priority_level]}</span>${additionalEventsTagHtml(cp)}</div>
+      <div class="divider"></div><div class="stat"><div class="v">${cp.priority_score ?? "—"}점</div><div class="l">대표 사건 점수 (1~10)</div></div>
       <div class="divider"></div><div class="stat"><div class="v">${newDiscl.length}건</div><div class="l">신규 공시</div></div>
       <div class="stat"><div class="v">${corrDiscl.length}건</div><div class="l">정정 공시</div></div>
       <div class="stat"><div class="v">${cp.financial_rule_count}건</div><div class="l">재무 변화</div></div>
-      <div class="divider"></div><div style="display:flex; gap:5px; flex-wrap:wrap;">${rules.map(ruleChipHtml).join("") || '<span class="empty-note">적용된 Rule 없음</span>'}</div>`;
+      <div class="divider"></div><div style="display:flex; gap:5px; flex-wrap:wrap;">${rules.map((r) => ruleChipHtml(r, ruleDirectionFor(corpCode, r))).join("") || '<span class="empty-note">적용된 Rule 없음</span>'}</div>`;
 
     renderCtxLine(corpCode, events);
 
@@ -607,32 +882,17 @@
       const r = byAccount[k];
       const rate = (r.frmtrm_amount && r.frmtrm_amount !== 0) ? (r.thstrm_amount - r.frmtrm_amount) / r.frmtrm_amount : null;
       const rule = ruleByAccount[r.account_std_name];
-      return `<tr><td class="name-cell">${esc(r.account_std_name)}</td><td class="num-cell">${fmtNum(r.frmtrm_amount)}</td><td class="num-cell">${fmtNum(r.thstrm_amount)}</td><td class="num-cell">${financialChangeCell(rule, rate)}</td><td>${rule ? ruleChipHtml(rule) : '<span style="color:var(--text-muted);font-size:11px;">—</span>'}</td></tr>`;
+      const dir = rule ? ruleDirectionFor(corpCode, rule) : null;
+      return `<tr><td class="name-cell">${esc(r.account_std_name)}</td><td class="num-cell">${fmtNum(r.frmtrm_amount)}</td><td class="num-cell">${fmtNum(r.thstrm_amount)}</td><td class="num-cell">${financialChangeCell(rule, rate, dir)}</td><td>${rule ? ruleChipHtml(rule, dir) : '<span style="color:var(--text-muted);font-size:11px;">—</span>'}</td></tr>`;
     }).join("");
     document.getElementById("detail-fin-table").innerHTML = `<thead><tr><th>지표</th><th>이전(${(byAccount.REVENUE&&(byAccount.REVENUE.bsns_year-1))||''})</th><th>최신(${(byAccount.REVENUE&&byAccount.REVENUE.bsns_year)||''})</th><th>변화</th><th>적용 Rule</th></tr></thead><tbody>${finRows || '<tr><td colspan="5" class="empty-note">재무 데이터 없음</td></tr>'}</tbody>`;
 
     document.getElementById("detail-rules").innerHTML = rules.map((r) => {
       const cat = DATA.rule_catalog.find((c) => c.rule_id === r);
-      return `<div class="rule-card">${ruleChipHtml(r)}<div class="desc">${esc(cat ? cat.description : "")}</div></div>`;
+      return `<div class="rule-card">${ruleChipHtml(r, ruleDirectionFor(corpCode, r))}<div class="desc">${esc(cat ? cat.description : "")}</div></div>`;
     }).join("") || '<div class="empty-note">적용된 Rule 없음</div>';
 
-    const slopeKeys = [["REVENUE", "매출액", "var(--series-1)"], ["OP_INCOME", "영업이익", "var(--series-2)"], ["OCF", "영업활동현금흐름", "var(--series-3)"]];
-    const have = slopeKeys.filter(([k]) => byAccount[k]);
-    if (have.length) {
-      const W = 620, H = 200, padL = 70, padR = 110, padT = 16, padB = 28;
-      const plotW = W - padL - padR, plotH = H - padT - padB;
-      const allVals = have.flatMap(([k]) => [byAccount[k].frmtrm_amount, byAccount[k].thstrm_amount]);
-      const minV = Math.min(0, ...allVals), maxV = Math.max(...allVals);
-      const y = (v) => padT + plotH - ((v - minV) / (maxV - minV || 1)) * plotH;
-      const yearPrior = byAccount[have[0][0]].bsns_year - 1, yearLatest = byAccount[have[0][0]].bsns_year;
-      const lines = have.map(([k, label, color]) => {
-        const r = byAccount[k], y1 = y(r.frmtrm_amount), y2 = y(r.thstrm_amount);
-        return `<line x1="${padL}" y1="${y1}" x2="${W-padR}" y2="${y2}" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/><circle cx="${padL}" cy="${y1}" r="4" fill="${color}"/><circle cx="${W-padR}" cy="${y2}" r="4" fill="${color}"/><text x="${W-padR+10}" y="${y2+4}" text-anchor="start" style="font-weight:600;" fill="${color}">${label} ${fmtNum(r.thstrm_amount)}</text>`;
-      }).join("");
-      document.getElementById("slope-chart").innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" width="100%" style="display:block; overflow:visible;"><line class="axis-line" x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+plotH}"/><line class="axis-line" x1="${W-padR}" y1="${padT}" x2="${W-padR}" y2="${padT+plotH}"/><text x="${padL}" y="${H-8}" text-anchor="middle">${yearPrior}</text><text x="${W-padR}" y="${H-8}" text-anchor="middle">${yearLatest}</text>${lines}</svg>`;
-    } else {
-      document.getElementById("slope-chart").innerHTML = '<div class="empty-note">재무 시계열 데이터 없음</div>';
-    }
+    renderQuarterlyChart(corpCode);
 
     document.getElementById("d-new-title").textContent = `신규 공시 목록 (${newDiscl.length}건)`;
     document.getElementById("detail-new-table").innerHTML = `<thead><tr><th>공시일</th><th>공시명</th><th>접수번호</th><th></th></tr></thead><tbody>${newDiscl.slice(0, 12).map((d) => `<tr><td class="num-cell">${fmtDate(d.rcept_dt)}</td><td>${esc(d.report_nm_clean)}</td><td class="num-cell">${d.rcept_no}</td><td><a class="dart-link" href="${dartUrl(d.rcept_no)}" target="_blank" rel="noopener">원문 ↗</a></td></tr>`).join("") || '<tr><td colspan="4" class="empty-note">없음</td></tr>'}</tbody>`;
@@ -668,11 +928,13 @@
   }
 
   // ---- data loading ----
+  // a-review-date(새 분석 시작용 입력칸)는 여기서 절대 건드리지 않는다 — 항상 실시간(오늘)을
+  // 유지해야 한다. f-review-date/d-review-date는 "지금 보고 있는 분석 결과가 어느 검토일
+  // 기준인지" 표시용이라 DATA.review_date(저장된 마지막 분석 날짜)를 그대로 따른다.
   async function loadDashboard(reviewDate) {
     const url = reviewDate ? `/api/dashboard?review_date=${encodeURIComponent(reviewDate)}` : "/api/dashboard";
     const res = await fetch(url);
     DATA = await res.json();
-    if (DATA.review_date) document.getElementById("a-review-date").value = DATA.review_date;
     renderAll();
   }
 
@@ -709,6 +971,9 @@
     }
   });
 
+  // "검토 기준일" 기본값은 고정 날짜가 아니라 실시간(오늘) — loadDashboard가 기존 분석이
+  // 있으면 그 review_date로 다시 덮어쓴다(이전 검토 흐름 이어가기), 없으면 오늘 그대로 유지.
+  document.getElementById("a-review-date").value = new Date().toISOString().slice(0, 10);
   loadDashboard();
 })();
 </script>
