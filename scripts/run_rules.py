@@ -44,7 +44,9 @@ def rule_f1(cur, review_date: str, weight: int) -> int:
              account_std_name, old_value, new_value, description)
         SELECT f.corp_code, co.corp_name, %(rd)s, 'financial', 'F1', %(w)s,
                f.account_std_name, f.frmtrm_amount, f.thstrm_amount,
-               format('영업이익 %%s → %%s (흑자→적자 전환, %%s년)', f.frmtrm_amount, f.thstrm_amount, f.bsns_year)
+               format('영업이익 %%s원 → %%s원 (흑자→적자 전환, %%s년)',
+                      to_char(f.frmtrm_amount, 'FM999,999,999,999,999,999'),
+                      to_char(f.thstrm_amount, 'FM999,999,999,999,999,999'), f.bsns_year)
         FROM core.latest_financials f
         JOIN core.companies co USING (corp_code)
         WHERE f.account_std_code = 'OP_INCOME' AND f.frmtrm_amount > 0 AND f.thstrm_amount <= 0
@@ -63,7 +65,9 @@ def rule_f2(cur, review_date: str, weight: int) -> int:
              account_std_name, old_value, new_value, description)
         SELECT f.corp_code, co.corp_name, %(rd)s, 'financial', 'F2', %(w)s,
                f.account_std_name, f.frmtrm_amount, f.thstrm_amount,
-               format('영업활동현금흐름 %%s → %%s (%%s년)', f.frmtrm_amount, f.thstrm_amount, f.bsns_year)
+               format('영업활동현금흐름 %%s원 → %%s원 (%%s년)',
+                      to_char(f.frmtrm_amount, 'FM999,999,999,999,999,999'),
+                      to_char(f.thstrm_amount, 'FM999,999,999,999,999,999'), f.bsns_year)
         FROM core.latest_financials f
         JOIN core.companies co USING (corp_code)
         WHERE f.account_std_code = 'OCF' AND f.frmtrm_amount > 0 AND f.thstrm_amount < 0
@@ -83,9 +87,10 @@ def rule_f3(cur, review_date: str, weight: int) -> int:
         SELECT f.corp_code, co.corp_name, %(rd)s, 'financial', 'F3', %(w)s,
                f.account_std_name, f.frmtrm_amount, f.thstrm_amount,
                (f.thstrm_amount - f.frmtrm_amount) / f.frmtrm_amount,
-               format('매출액 YoY %%s%%%% (%%s → %%s, %%s년)',
+               format('매출액 YoY %%s%%%% (%%s원 → %%s원, %%s년)',
                       round(100 * (f.thstrm_amount - f.frmtrm_amount) / f.frmtrm_amount, 1),
-                      f.frmtrm_amount, f.thstrm_amount, f.bsns_year)
+                      to_char(f.frmtrm_amount, 'FM999,999,999,999,999,999'),
+                      to_char(f.thstrm_amount, 'FM999,999,999,999,999,999'), f.bsns_year)
         FROM core.latest_financials f
         JOIN core.companies co USING (corp_code)
         WHERE f.account_std_code = 'REVENUE' AND f.frmtrm_amount > 0
@@ -140,8 +145,9 @@ def rule_f5(cur, review_date: str, weight: int) -> int:
         SELECT f.corp_code, co.corp_name, %(rd)s, 'financial', 'F5', %(w)s,
                f.account_std_name, f.frmtrm_amount, f.thstrm_amount,
                (f.thstrm_amount - f.frmtrm_amount) / f.frmtrm_amount,
-               format('차입금 %%s → %%s (%%s%%%% 증가, %%s년)',
-                      f.frmtrm_amount, f.thstrm_amount,
+               format('차입금 %%s원 → %%s원 (%%s%%%% 증가, %%s년)',
+                      to_char(f.frmtrm_amount, 'FM999,999,999,999,999,999'),
+                      to_char(f.thstrm_amount, 'FM999,999,999,999,999,999'),
                       round(100 * (f.thstrm_amount - f.frmtrm_amount) / f.frmtrm_amount, 1), f.bsns_year)
         FROM core.latest_financials f
         JOIN core.companies co USING (corp_code)
@@ -162,7 +168,9 @@ def rule_f6(cur, review_date: str, weight: int) -> int:
              account_std_name, old_value, new_value, description)
         SELECT f.corp_code, co.corp_name, %(rd)s, 'financial', 'F6', %(w)s,
                f.account_std_name, f.frmtrm_amount, f.thstrm_amount,
-               format('영업이익 %%s → %%s (적자→흑자 전환, %%s년)', f.frmtrm_amount, f.thstrm_amount, f.bsns_year)
+               format('영업이익 %%s원 → %%s원 (적자→흑자 전환, %%s년)',
+                      to_char(f.frmtrm_amount, 'FM999,999,999,999,999,999'),
+                      to_char(f.thstrm_amount, 'FM999,999,999,999,999,999'), f.bsns_year)
         FROM core.latest_financials f
         JOIN core.companies co USING (corp_code)
         WHERE f.account_std_code = 'OP_INCOME' AND f.frmtrm_amount <= 0 AND f.thstrm_amount > 0
@@ -182,9 +190,10 @@ def rule_f7(cur, review_date: str, weight: int) -> int:
         SELECT f.corp_code, co.corp_name, %(rd)s, 'financial', 'F7', %(w)s,
                f.account_std_name, f.frmtrm_amount, f.thstrm_amount,
                (f.thstrm_amount - f.frmtrm_amount) / f.frmtrm_amount,
-               format('영업이익 YoY +%%s%%%% 급증 (%%s → %%s, %%s년)',
+               format('영업이익 YoY +%%s%%%% 급증 (%%s원 → %%s원, %%s년)',
                       round(100 * (f.thstrm_amount - f.frmtrm_amount) / f.frmtrm_amount, 1),
-                      f.frmtrm_amount, f.thstrm_amount, f.bsns_year)
+                      to_char(f.frmtrm_amount, 'FM999,999,999,999,999,999'),
+                      to_char(f.thstrm_amount, 'FM999,999,999,999,999,999'), f.bsns_year)
         FROM core.latest_financials f
         JOIN core.companies co USING (corp_code)
         WHERE f.account_std_code = 'OP_INCOME' AND f.frmtrm_amount > 0
@@ -204,7 +213,9 @@ def rule_d1(cur, review_date: str, weight: int) -> int:
              account_std_name, old_value, new_value, description)
         SELECT f.corp_code, co.corp_name, %(rd)s, 'disclosure', 'D1', %(w)s,
                f.account_std_name, f.frmtrm_amount, f.thstrm_amount,
-               format('단기차입금 %%s → %%s (%%s년)', f.frmtrm_amount, f.thstrm_amount, f.bsns_year)
+               format('단기차입금 %%s원 → %%s원 (%%s년)',
+                      to_char(f.frmtrm_amount, 'FM999,999,999,999,999,999'),
+                      to_char(f.thstrm_amount, 'FM999,999,999,999,999,999'), f.bsns_year)
         FROM core.latest_financials f
         JOIN core.companies co USING (corp_code)
         WHERE f.account_std_code = 'ST_BORROWINGS'
