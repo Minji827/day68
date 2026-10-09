@@ -127,32 +127,34 @@
   .rank-fill { height: 100%; border-radius: 5px 0 0 5px; }
   .rank-score { width: 34px; flex-shrink: 0; font-size: 14px; font-weight: 700; text-align: left; }
 
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  /* 한글 표 셀이 좁을 때 "호\n텔\n신\n라"처럼 글자 단위로 깨지는 문제 방지 —
+     단어 단위로만 줄바꿈하고, 그래도 넘치면 .table-wrap의 가로 스크롤로 처리. */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; word-break: keep-all; }
   thead th { text-align: left; font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; padding: 0 10px 9px; border-bottom: 1px solid var(--grid); }
   tbody td { padding: 10px; border-bottom: 1px solid var(--grid); color: var(--text-secondary); vertical-align: middle; }
   tbody tr:last-child td { border-bottom: none; }
   .table-wrap { overflow-x: auto; }
-  td.name-cell { color: var(--text-primary); font-weight: 600; }
+  td.name-cell { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
   td.num-cell { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .delta-up { color: var(--critical); font-weight: 600; }
   .delta-down { color: var(--good); font-weight: 600; }
 
   /* 가독성 개선: 점+글자뿐이던 배지를 패딩 있는 캡슐 + 점 아이콘(::before, 색은
      currentColor라 JS 수정 없이 자동 적용)으로. 글자도 11px→12.5px, 굵게. */
-  .badge { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 99px; font-size: 12.5px; font-weight: 800; }
+  .badge { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 99px; font-size: 12.5px; font-weight: 800; white-space: nowrap; flex-shrink: 0; }
   .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
   .badge-emergency { background: var(--emergency-bg); color: var(--emergency); }
   .badge-high { background: var(--critical-bg); color: var(--critical); }
   .badge-mid { background: var(--warning-bg); color: #9a6a00; }
   .badge-low { background: var(--good-bg); color: var(--good); }
   .badge-none { background: var(--muted-bg); color: var(--text-muted); }
-  .rule-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 8px; background: var(--muted-bg); color: var(--text-secondary); font-family: "IBM Plex Mono", monospace; }
+  .rule-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 8px; background: var(--muted-bg); color: var(--text-secondary); font-family: "IBM Plex Mono", monospace; white-space: nowrap; flex-shrink: 0; }
   .rule-chip.positive { background: var(--good-bg); color: var(--good); }
   .rule-chip.negative { background: var(--critical-bg); color: var(--critical); }
   .rule-chip.neutral { background: var(--muted-bg); color: var(--text-secondary); }
   .reason-headline { font-size: 14px; font-weight: 600; color: var(--text-primary); line-height: 1.6; }
   .reason-sub { font-size: 13px; color: var(--text-secondary); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .transition-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 99px; font-size: 10.5px; font-weight: 700; }
+  .transition-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 99px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
   .transition-badge.to-positive { background: var(--good-bg); color: var(--good); }
   .transition-badge.to-negative { background: var(--critical-bg); color: var(--critical); }
   .section-block { display: flex; flex-direction: column; gap: 10px; }
