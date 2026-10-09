@@ -10,8 +10,11 @@
     --bg: #f9f9f7; --surface: #fcfcfb; --surface-raised: #ffffff;
     --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
     --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11,11,11,0.10);
-    --brand: #2a78d6; --brand-ink: #184f95;
-    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+    /* KB금융그룹 브랜드 팔레트 적용 — brand/series-1을 KB Yellow/Gray로 교체.
+       good/warning/critical/emergency(증감 의미를 가진 상태색)는 의미 보존을 위해
+       그대로 둔다 — 브랜드색으로 덮으면 "좋음/나쁨" 신호가 헷갈리게 된다. */
+    --brand: #605848; --brand-ink: #403c31;
+    --series-1: #ffbc00; --series-2: #eb6834; --series-3: #1baf7a;
     --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
     --critical-bg: #fdeceb; --warning-bg: #fef6e3; --good-bg: #e8f8e8; --muted-bg: #efeeea;
     --prior: #9a988f;
@@ -23,8 +26,8 @@
       --bg: #0d0d0d; --surface: #1a1a19; --surface-raised: #212120;
       --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
       --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
-      --brand: #3987e5; --brand-ink: #86b6ef;
-      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+      --brand: #9c927c; --brand-ink: #c3b9a0;
+      --series-1: #ffc933; --series-2: #d95926; --series-3: #199e70;
       --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #e66767;
       --critical-bg: #3a1f1f; --warning-bg: #352c15; --good-bg: #163316; --muted-bg: #242422;
       --prior: #6b6a64;
@@ -36,8 +39,8 @@
     --bg: #0d0d0d; --surface: #1a1a19; --surface-raised: #212120;
     --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
     --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
-    --brand: #3987e5; --brand-ink: #86b6ef;
-    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --brand: #9c927c; --brand-ink: #c3b9a0;
+    --series-1: #ffc933; --series-2: #d95926; --series-3: #199e70;
     --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #e66767;
     --critical-bg: #3a1f1f; --warning-bg: #352c15; --good-bg: #163316; --muted-bg: #242422;
     --prior: #6b6a64;
@@ -53,7 +56,7 @@
   .app { display: flex; max-width: 1400px; margin: 0 auto; gap: 20px; align-items: flex-start; }
   .sidebar { width: 208px; flex-shrink: 0; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 18px 14px; position: sticky; top: 16px; }
   .brand { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
-  .brand-mark { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, var(--brand), var(--series-3)); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .brand-mark { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, var(--series-1), var(--brand)); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .brand-mark svg { width: 17px; height: 17px; }
   .brand-name { font-weight: 700; font-size: 15px; line-height: 1.2; letter-spacing: -0.01em; }
   .brand-sub { font-size: 11px; color: var(--text-muted); margin: 2px 0 18px 39px; }
