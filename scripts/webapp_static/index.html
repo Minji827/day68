@@ -117,17 +117,19 @@
   .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); }
   .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 
-  .rank-row { display: flex; align-items: center; gap: 10px; }
-  .rank-row[data-corp] { cursor: pointer; padding: 3px 6px; margin: -3px -6px; border-radius: 6px; }
+  /* 가독성 개선: 행 간격 넉넉하게(12px) + 구분선, 기업명/점수 글자 키움(14px) */
+  .rank-row { display: flex; align-items: center; gap: 14px; padding: 12px 8px; border-bottom: 1px solid var(--grid); }
+  .rank-row:last-child { border-bottom: none; }
+  .rank-row[data-corp] { cursor: pointer; border-radius: 8px; }
   .rank-row[data-corp]:hover { background: var(--muted-bg); }
-  .rank-name { width: 84px; flex-shrink: 0; font-size: 12px; font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rank-track { flex: 1; height: 16px; background: var(--muted-bg); border-radius: 4px; position: relative; overflow: hidden; }
-  .rank-fill { height: 100%; border-radius: 4px 0 0 4px; }
-  .rank-score { width: 28px; flex-shrink: 0; font-size: 11.5px; font-weight: 700; text-align: left; }
+  .rank-name { width: 108px; flex-shrink: 0; font-size: 14px; font-weight: 700; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-track { flex: 1; height: 18px; background: var(--muted-bg); border-radius: 5px; position: relative; overflow: hidden; }
+  .rank-fill { height: 100%; border-radius: 5px 0 0 5px; }
+  .rank-score { width: 34px; flex-shrink: 0; font-size: 14px; font-weight: 700; text-align: left; }
 
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  thead th { text-align: left; font-size: 10.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; padding: 0 8px 7px; border-bottom: 1px solid var(--grid); }
-  tbody td { padding: 7px 8px; border-bottom: 1px solid var(--grid); color: var(--text-secondary); vertical-align: middle; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { text-align: left; font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; padding: 0 10px 9px; border-bottom: 1px solid var(--grid); }
+  tbody td { padding: 10px; border-bottom: 1px solid var(--grid); color: var(--text-secondary); vertical-align: middle; }
   tbody tr:last-child td { border-bottom: none; }
   .table-wrap { overflow-x: auto; }
   td.name-cell { color: var(--text-primary); font-weight: 600; }
@@ -135,18 +137,21 @@
   .delta-up { color: var(--critical); font-weight: 600; }
   .delta-down { color: var(--good); font-weight: 600; }
 
-  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; }
-  .badge-emergency { background: var(--emergency-bg); color: var(--emergency); font-weight: 800; }
+  /* 가독성 개선: 점+글자뿐이던 배지를 패딩 있는 캡슐 + 점 아이콘(::before, 색은
+     currentColor라 JS 수정 없이 자동 적용)으로. 글자도 11px→12.5px, 굵게. */
+  .badge { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 99px; font-size: 12.5px; font-weight: 800; }
+  .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .badge-emergency { background: var(--emergency-bg); color: var(--emergency); }
   .badge-high { background: var(--critical-bg); color: var(--critical); }
   .badge-mid { background: var(--warning-bg); color: #9a6a00; }
   .badge-low { background: var(--good-bg); color: var(--good); }
   .badge-none { background: var(--muted-bg); color: var(--text-muted); }
-  .rule-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--muted-bg); color: var(--text-secondary); font-family: "IBM Plex Mono", monospace; }
+  .rule-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 8px; background: var(--muted-bg); color: var(--text-secondary); font-family: "IBM Plex Mono", monospace; }
   .rule-chip.positive { background: var(--good-bg); color: var(--good); }
   .rule-chip.negative { background: var(--critical-bg); color: var(--critical); }
   .rule-chip.neutral { background: var(--muted-bg); color: var(--text-secondary); }
-  .reason-headline { font-size: 13px; font-weight: 600; color: var(--text-primary); line-height: 1.4; }
-  .reason-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .reason-headline { font-size: 14px; font-weight: 600; color: var(--text-primary); line-height: 1.6; }
+  .reason-sub { font-size: 13px; color: var(--text-secondary); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .transition-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 99px; font-size: 10.5px; font-weight: 700; }
   .transition-badge.to-positive { background: var(--good-bg); color: var(--good); }
   .transition-badge.to-negative { background: var(--critical-bg); color: var(--critical); }
@@ -189,9 +194,9 @@
 
   .summary-card { display: flex; flex-direction: column; gap: 12px; }
   .summary-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .summary-id .corp { font-size: 15px; font-weight: 700; }
-  .summary-id .code { font-size: 11.5px; color: var(--text-muted); font-family: "IBM Plex Mono", monospace; }
-  .summary-stats { display: flex; flex-direction: column; gap: 7px; font-size: 12px; }
+  .summary-id .corp { font-size: 17px; font-weight: 700; }
+  .summary-id .code { font-size: 12px; color: var(--text-muted); font-family: "IBM Plex Mono", monospace; }
+  .summary-stats { display: flex; flex-direction: column; gap: 9px; font-size: 13.5px; }
   .summary-stats .row { display: flex; justify-content: space-between; color: var(--text-secondary); }
   .summary-stats .row b { color: var(--text-primary); font-family: "IBM Plex Mono", monospace; }
   .summary-rules { display: flex; gap: 5px; flex-wrap: wrap; }
@@ -201,12 +206,12 @@
   select.company-select { font-family: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); }
   .detail-banner { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
   .detail-banner .stat { display: flex; flex-direction: column; gap: 2px; }
-  .detail-banner .stat .v { font-size: 17px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
-  .detail-banner .stat .l { font-size: 10.5px; color: var(--text-muted); }
+  .detail-banner .stat .v { font-size: 19px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+  .detail-banner .stat .l { font-size: 11.5px; color: var(--text-muted); }
   .detail-banner .divider { width: 1px; height: 30px; background: var(--grid); }
   .rule-card { display: flex; gap: 10px; align-items: flex-start; background: var(--muted-bg); border-radius: 9px; padding: 10px 12px; }
   .rule-card .rule-chip { flex-shrink: 0; margin-top: 1px; }
-  .rule-card .desc { font-size: 11.5px; color: var(--text-secondary); line-height: 1.4; }
+  .rule-card .desc { font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; }
   svg.chart text { fill: var(--text-muted); font-size: 10px; font-family: "IBM Plex Mono", monospace; }
   svg.chart .axis-line { stroke: var(--baseline); stroke-width: 1; }
   svg.chart .grid-line { stroke: var(--grid); stroke-width: 1; }
