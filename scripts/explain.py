@@ -33,35 +33,33 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 # 예전엔 둘이 따로 3/2로 어긋나 있었음 - 하나로 통일.
 AI_EXPLAIN_LIMIT = 2
 
+# v4.1 5단계: "①무엇이 바뀌었나(change)"만 LLM이 쓰고, "②왜 재검토 대상인가(사유)"와
+# "③추가 확인사항(확인)"은 더 이상 LLM이 안 쓴다 - rule_catalog.description/
+# core.rule_checklist에서 결정론적으로 조립한다(아래 process_target). "점수·등급·판정은
+# 코드가 계산하고 LLM은 계산하지 않는다"를 AI 해설에도 동일 적용(팀 리뷰) - 예전엔
+# meaning/check도 LLM이 자유 생성해서 Rule 목록을 "참고"만 했을 뿐 매번 다른 문장이
+# 나올 수 있었다.
 SYSTEM_PROMPT = """\
 당신은 금융 공시 변경 해설가입니다. 아래로 정정공시 원문(그리고 있다면 정정 전 원공시 원문)이
-섹션 단위로 주어지고, 이 기업에 이번 검토에서 이미 발동한 Rule 목록(우리 룰엔진이 SQL로
-계산한 결과)도 함께 주어집니다. 투자 리서치 담당자가 "무엇이 바뀌었는지 → 왜 다시 봐야
-하는지 → 추가로 뭘 확인해야 하는지"를 한 번에 파악하도록, 1~2개의 변화 항목을 작성하세요.
+섹션 단위로 주어집니다. "무엇이 바뀌었는지"만 1~2개 항목으로 작성하세요 - 이유나 확인사항은
+쓰지 않습니다(그건 다른 곳에서 결정론적으로 채웁니다).
 
-각 항목은 change / meaning / check 세 부분으로 구성합니다:
-1. change (변화): 원문에서 실제로 확인되는 사실만. 추측하거나 원문에 없는 수치·사실을
-   만들어내지 않는다. 반드시 근거를 함께 제시: evidence_rcept_no(그 내용이 나온 공시의
-   접수번호), evidence_section_no(섹션 번호), evidence_excerpt(그 섹션 원문에서 "토씨 하나
-   틀리지 않고 그대로 복사한" 짧은 발췌, 최대 150자). 근거를 찾을 수 없으면 그 항목 자체를
-   만들지 않는다.
-2. meaning (의미): change가 왜 재검토 대상인지. **반드시 주어진 Rule 목록 안에서만** 연결
-   하라 — 예: "이는 F2(영업활동현금흐름 흑자→적자 전환)에 해당합니다." Rule 목록에 맞는
-   항목이 없으면 "현재 Rule 기준으로는 별도 분류되지 않았습니다" 같은 중립적 문장만 쓰고,
-   시장 상황·경영 판단 등 원문에 없는 원인을 추측해서 지어내지 않는다.
-3. check (추가 확인사항): 담당자가 다음에 무엇을 확인하면 좋을지 "제안" (사실 주장이 아님,
-   예: "정정 사유가 일회성 재분류인지 원문 II장에서 확인 권장"). 이 부분은 근거 검증
-   대상이 아니다.
+각 항목(change)은 원문에서 실제로 확인되는 사실만 적습니다. 추측하거나 원문에 없는 수치·사실을
+만들어내지 않는다. 반드시 근거를 함께 제시: evidence_rcept_no(그 내용이 나온 공시의 접수번호),
+evidence_section_no(섹션 번호), evidence_excerpt(그 섹션 원문에서 "토씨 하나 틀리지 않고 그대로
+복사한" 짧은 발췌, 최대 150자). 근거를 찾을 수 없으면 그 항목 자체를 만들지 않는다.
 
 반드시 아래 JSON 형식으로만 응답한다 (근거 없으면 items가 빈 배열이어도 됨):
-{"items": [{"change": "...", "meaning": "...", "check": "...",
+{"items": [{"change": "...",
             "evidence_rcept_no": "...", "evidence_section_no": 0, "evidence_excerpt": "..."}]}
 """
 
 
 def fired_rules(cur, corp_code: str, review_date: str) -> list[dict]:
-    """이 기업이 이번 검토에서 실제로 받은 Rule 목록. AI의 "의미" 파트가 이 목록 밖으로
-    나가지 않게 하는 근거 자료."""
+    """이 기업이 이번 검토에서 실제로 받은 Rule 목록(점수 높은 순). v4.1부터는 LLM
+    프롬프트가 아니라 process_target이 "사유"/"확인" 문장을 결정론적으로 조립할 때
+    쓴다 - rules[0]이 대표 Rule(= company_priority.top_rule_id와 같은 선정 기준:
+    가장 점수가 높은 것)."""
     cur.execute(
         """
         SELECT ce.rule_id, rc.description, ce.score
@@ -75,9 +73,17 @@ def fired_rules(cur, corp_code: str, review_date: str) -> list[dict]:
     return [{"rule_id": r[0], "description": r[1], "score": r[2]} for r in cur.fetchall()]
 
 
-def build_prompt(
-    target: dict, target_sections: list[dict], orig_sections: list[dict], rules: list[dict]
-) -> str:
+def checklist_for(cur, rule_id: str) -> list[str]:
+    """core.rule_checklist에서 그 rule_id의 확인사항만 가져온다(없으면 빈 리스트) -
+    LLM이 확인사항을 즉석에서 지어내지 않도록 이 목록 밖으로 못 나가게 한다."""
+    cur.execute(
+        "SELECT check_item FROM core.rule_checklist WHERE rule_id = %s ORDER BY seq",
+        (rule_id,),
+    )
+    return [r[0] for r in cur.fetchall()]
+
+
+def build_prompt(target: dict, target_sections: list[dict], orig_sections: list[dict]) -> str:
     parts = [f"## 정정공시 (접수번호 {target['rcept_no']}): {target['report_nm_clean']}"]
     for s in target_sections:
         parts.append(f"[섹션 {s['section_no']}] {s['section_title']}\n{s['section_text']}")
@@ -87,12 +93,6 @@ def build_prompt(
             parts.append(f"[섹션 {s['section_no']}] {s['section_title']}\n{s['section_text']}")
     else:
         parts.append("\n(정정 전 원공시를 찾지 못했습니다. 정정공시 원문만으로 해설하세요.)")
-
-    if rules:
-        rule_lines = "\n".join(f"- {r['rule_id']}: {r['description']}" for r in rules)
-        parts.append(f"\n## 이 기업이 이번 검토에서 받은 Rule 목록 (의미 작성 시 이 안에서만 연결)\n{rule_lines}")
-    else:
-        parts.append("\n## 이 기업이 이번 검토에서 받은 Rule 없음 (의미는 중립적으로만 작성)")
     return "\n\n".join(parts)
 
 
@@ -121,8 +121,9 @@ def call_openai(user_prompt: str) -> list[dict]:
 
 
 def validate_item(item: dict, sections_by_rcept: dict[str, dict[int, dict]]) -> bool:
-    """근거 검증은 '변화'(change) 파트에만 적용한다 — meaning은 Rule 목록 재진술,
-    check은 확인 제안이라 원문 대조 대상이 아니다 (PRD: 근거 없는 사실 주장만 배제)."""
+    """LLM이 쓰는 유일한 파트(변화/change)에 대한 근거 검증 - 원문 섹션에 실제로 있는
+    발췌인지 확인. v4.1부터 사유/확인은 LLM이 안 쓰므로(결정론적으로 조립) 이 함수의
+    검증 대상이 아니다."""
     rcept_no = item.get("evidence_rcept_no")
     section_no = item.get("evidence_section_no")
     excerpt = (item.get("evidence_excerpt") or "").strip()
@@ -135,7 +136,30 @@ def validate_item(item: dict, sections_by_rcept: dict[str, dict[int, dict]]) -> 
     return excerpt in section["section_text"]
 
 
+def _insert_sentence(cur, rcept_no: str, sentence_no: int, sentence_type: str, sentence_text: str,
+                      evidence_rcept_no: str, evidence_section: str, evidence_excerpt: str) -> None:
+    cur.execute(
+        """
+        INSERT INTO mart.explanation_sentences
+            (rcept_no, sentence_no, sentence_type, sentence_text,
+             evidence_rcept_no, evidence_section, evidence_excerpt)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (rcept_no, sentence_no) DO UPDATE SET
+            sentence_type = EXCLUDED.sentence_type,
+            sentence_text = EXCLUDED.sentence_text,
+            evidence_rcept_no = EXCLUDED.evidence_rcept_no,
+            evidence_section = EXCLUDED.evidence_section,
+            evidence_excerpt = EXCLUDED.evidence_excerpt
+        """,
+        (rcept_no, sentence_no, sentence_type, sentence_text, evidence_rcept_no, evidence_section, evidence_excerpt),
+    )
+
+
 def process_target(cur, target: dict, review_date: str) -> int:
+    """①변화는 LLM(원문 근거 검증 필수), ②사유·③확인은 rule_catalog/rule_checklist에서
+    결정론적으로 조립(v4.1 5단계) - "점수·등급·판정은 코드가 계산하고 LLM은 계산하지
+    않는다"를 AI 해설에도 적용. 대표 Rule(가장 점수 높은 것, company_priority.top_rule_id와
+    같은 기준)의 description이 사유, 그 rule_id의 체크리스트가 확인사항이 된다."""
     target_sections = ensure_sections(cur, target["rcept_no"])
     orig_sections = ensure_sections(cur, target["orig_rcept_no"]) if target["orig_rcept_no"] else []
     if not target_sections:
@@ -148,48 +172,51 @@ def process_target(cur, target: dict, review_date: str) -> int:
     if orig_sections:
         sections_by_rcept[target["orig_rcept_no"]] = {s["section_no"]: s for s in orig_sections}
 
-    rules = fired_rules(cur, target["corp_code"], review_date)
-    prompt = build_prompt(target, target_sections, orig_sections, rules)
+    prompt = build_prompt(target, target_sections, orig_sections)
     items = call_openai(prompt)
 
-    kept = 0
+    n = 0
+    changes_kept = 0
     for item in items:
         if not validate_item(item, sections_by_rcept):
             print(f"  REJECTED (근거 불일치): {item.get('change', '')[:60]}")
             continue
+        n += 1
+        changes_kept += 1
         ev_section = sections_by_rcept[item["evidence_rcept_no"]][int(item["evidence_section_no"])]
-        # 변화 / 의미 / 확인사항을 하나의 자연스러운 3문장으로 저장 (스키마 변경 없음).
-        meaning = (item.get("meaning") or "").strip()
-        check = (item.get("check") or "").strip()
-        text_parts = [item["change"].strip()]
-        if meaning:
-            text_parts.append(meaning)
-        if check:
-            text_parts.append(f"(확인 필요: {check})")
-        sentence_text = " ".join(text_parts)
-        cur.execute(
-            """
-            INSERT INTO mart.explanation_sentences
-                (rcept_no, sentence_no, sentence_text, evidence_rcept_no, evidence_section, evidence_excerpt)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (rcept_no, sentence_no) DO UPDATE SET
-                sentence_text = EXCLUDED.sentence_text,
-                evidence_rcept_no = EXCLUDED.evidence_rcept_no,
-                evidence_section = EXCLUDED.evidence_section,
-                evidence_excerpt = EXCLUDED.evidence_excerpt
-            """,
-            (
-                target["rcept_no"],
-                kept + 1,
-                sentence_text,
-                item["evidence_rcept_no"],
-                ev_section["section_title"],
-                item["evidence_excerpt"],
-            ),
+        _insert_sentence(
+            cur, target["rcept_no"], n, "변화", item["change"].strip(),
+            item["evidence_rcept_no"], ev_section["section_title"], item["evidence_excerpt"],
         )
-        kept += 1
-    print(f"  {target['rcept_no']}: 생성 {len(items)}건 중 {kept}건 근거 검증 통과")
-    return kept
+    if changes_kept == 0:
+        print(f"  {target['rcept_no']}: 생성 {len(items)}건 중 0건 근거 검증 통과 - 사유/확인도 생략")
+        return 0
+
+    # ②③은 "변화"가 최소 1건 살아남았을 때만 붙인다 - 근거 없는 변화에 사유/확인만
+    # 달리는 건 맥락이 없어 의미가 없다. 대표 Rule(가장 점수 높은 것) 하나의 사유/
+    # 체크리스트만 쓴다 - 여러 Rule이 떴어도 "가장 중요한 단일 사건" 원칙(v4.0/4.1)과
+    # 일관되게.
+    rules = fired_rules(cur, target["corp_code"], review_date)
+    if rules:
+        top_rule = rules[0]
+        n += 1
+        _insert_sentence(
+            cur, target["rcept_no"], n, "사유", top_rule["description"],
+            top_rule["rule_id"], "규칙 설명 (rule_catalog)", top_rule["description"],
+        )
+        checklist_items = checklist_for(cur, top_rule["rule_id"])
+        for item_text in checklist_items:
+            n += 1
+            _insert_sentence(
+                cur, target["rcept_no"], n, "확인", item_text,
+                top_rule["rule_id"], "체크리스트 (rule_checklist)", item_text,
+            )
+        print(f"  {target['rcept_no']}: 변화 {changes_kept}건 근거 검증 통과, "
+              f"사유 1건 + 확인 {len(checklist_items)}건 ({top_rule['rule_id']} 기준)")
+    else:
+        print(f"  {target['rcept_no']}: 변화 {changes_kept}건 근거 검증 통과, "
+              f"사유·확인 생략(이번 검토에서 발동한 Rule 없음)")
+    return n
 
 
 def main() -> None:

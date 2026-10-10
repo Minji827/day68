@@ -85,7 +85,7 @@ def export_all(cur, review_date: str | None = None) -> dict:
         "explanation_sentences": _rows(
             cur,
             """
-            SELECT es.rcept_no, es.sentence_no, es.sentence_text, es.evidence_rcept_no,
+            SELECT es.rcept_no, es.sentence_no, es.sentence_type, es.sentence_text, es.evidence_rcept_no,
                    es.evidence_section, es.evidence_excerpt,
                    d.corp_code, d.report_nm_clean, d.rcept_dt, d.orig_rcept_no
             FROM mart.explanation_sentences es

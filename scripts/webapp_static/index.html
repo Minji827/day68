@@ -269,6 +269,14 @@
   .ai-sentence .text { font-size: 12.5px; color: var(--text-primary); line-height: 1.5; }
   .ai-sentence .quote { font-size: 11px; color: var(--text-secondary); background: var(--muted-bg); border-left: 2.5px solid var(--brand); padding: 5px 9px; border-radius: 0 6px 6px 0; line-height: 1.45; font-family: "IBM Plex Mono", monospace; }
   .ai-sentence .quote .src { color: var(--text-muted); font-weight: 600; margin-right: 5px; }
+  /* v4.1 5단계: 변화/사유/확인 3블록을 시각적으로 구분 - 사유·확인은 이제 LLM이 아니라
+     rule_catalog/rule_checklist에서 결정론적으로 조립되므로, "근거 발췌" 스타일(인용구
+     박스)이 아니라 더 단순한 스타일로 구분해 "이건 원문 검증 대상이 아님"을 암시한다. */
+  .ai-block-label { font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 5px; }
+  .ai-block + .ai-block { margin-top: 2px; padding-top: 9px; border-top: 1px dashed var(--grid); }
+  .ai-plain { font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; }
+  .ai-check-list { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
+  .ai-check-list li { margin-bottom: 2px; }
   .placeholder { text-align: center; padding: 60px 20px; color: var(--text-muted); font-size: 13px; }
 
   @media (max-width: 980px) {
@@ -1030,17 +1038,26 @@
     el.innerHTML = `<div class="ctx-line">${icon}<span><b>금리 영향 재확인</b> — ${esc(cp.rate_context_text || "")}</span></div>`;
   }
 
+  // v4.1 5단계: ①변화(무엇이 바뀌었나, LLM+원문 근거) ②사유(왜 재검토 대상인가,
+  // rule_catalog.description) ③확인(추가 확인사항, rule_checklist) 세 블록으로 나눠
+  // 보여준다 - 예전엔 세 개를 한 문장으로 합쳐서 구분이 안 됐다(멘토 리뷰).
   function renderAiExplain(corpCode) {
     const sentences = (DATA.explanation_sentences || []).filter((s) => s.corp_code === corpCode);
     const el = document.getElementById("ai-explain");
     if (!sentences.length) { el.innerHTML = '<div class="empty-note">이 기업에 대해 생성된 AI 해설이 없습니다 (OPENAI_API_KEY 설정 후 분석 시 자동 생성됩니다).</div>'; return; }
     const groups = {};
-    sentences.forEach((s) => { if (!groups[s.rcept_no]) groups[s.rcept_no] = { meta: s, items: [] }; groups[s.rcept_no].items.push(s); });
+    sentences.forEach((s) => {
+      if (!groups[s.rcept_no]) groups[s.rcept_no] = { meta: s, change: [], reason: [], check: [] };
+      const bucket = s.sentence_type === "사유" ? "reason" : s.sentence_type === "확인" ? "check" : "change";
+      groups[s.rcept_no][bucket].push(s);
+    });
     const checkIcon = '<svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     el.innerHTML = Object.values(groups).map((g) => `
       <div class="ai-group">
         <div class="ai-group-head"><div class="ai-group-title">${esc(g.meta.report_nm_clean)}${g.meta.orig_rcept_no ? ` <span style="font-weight:400;color:var(--text-muted)">(원공시 연결됨)</span>` : ""}</div><div class="ai-group-date">정정일 ${fmtDate(g.meta.rcept_dt)} · <a class="dart-link" href="${dartUrl(g.meta.rcept_no)}" target="_blank" rel="noopener">원문 ↗</a></div></div>
-        ${g.items.map((s) => `<div class="ai-sentence"><div class="mark">${checkIcon}</div><div class="body"><div class="text">${esc(s.sentence_text)}</div><div class="quote"><span class="src">${s.evidence_rcept_no} · ${esc(s.evidence_section)}</span>"${esc(s.evidence_excerpt)}"</div></div></div>`).join("")}
+        ${g.change.length ? `<div class="ai-block"><div class="ai-block-label">① 무엇이 바뀌었나</div>${g.change.map((s) => `<div class="ai-sentence"><div class="mark">${checkIcon}</div><div class="body"><div class="text">${esc(s.sentence_text)}</div><div class="quote"><span class="src">${s.evidence_rcept_no} · ${esc(s.evidence_section)}</span>"${esc(s.evidence_excerpt)}"</div></div></div>`).join("")}</div>` : ""}
+        ${g.reason.length ? `<div class="ai-block"><div class="ai-block-label">② 왜 재검토 대상인가</div>${g.reason.map((s) => `<div class="ai-plain">${esc(s.sentence_text)}</div>`).join("")}</div>` : ""}
+        ${g.check.length ? `<div class="ai-block"><div class="ai-block-label">③ 추가 확인사항</div><ul class="ai-check-list">${g.check.map((s) => `<li>${esc(s.sentence_text)}</li>`).join("")}</ul></div>` : ""}
       </div>`).join("");
   }
 

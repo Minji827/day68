@@ -115,6 +115,14 @@ CREATE TABLE IF NOT EXISTS mart.explanation_sentences (
     PRIMARY KEY (rcept_no, sentence_no)
 );
 
+-- v4.1 5단계: 변화(①원문에서 추출, LLM+근거검증) / 사유(②rule_catalog.description 그대로,
+-- 결정론적) / 확인(③core.rule_checklist에서만, 결정론적)을 한 문장으로 합치지 않고
+-- 구분해서 저장 - 화면에서 세 구역으로 나눠 보여주기 위함(팀 리뷰). ②③은 evidence_*를
+-- "원문 발췌"가 아니라 그 출처(rule_id/체크리스트 항목 자체)로 채운다 - 체크리스트/
+-- 카탈로그 존재 자체가 근거이기 때문.
+ALTER TABLE mart.explanation_sentences ADD COLUMN IF NOT EXISTS sentence_type text
+    NOT NULL DEFAULT '변화' CHECK (sentence_type IN ('변화', '사유', '확인'));
+
 -- KPI 타일 (FR-04: 변화 발생 기업 수 / 중요도 높은 기업 수 / 신규·정정 공시 수)
 CREATE TABLE IF NOT EXISTS mart.kpi_daily (
     review_date             date PRIMARY KEY,
