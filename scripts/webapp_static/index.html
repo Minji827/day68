@@ -19,6 +19,12 @@
     --critical-bg: #fdeceb; --warning-bg: #fef6e3; --good-bg: #e8f8e8; --muted-bg: #efeeea;
     --prior: #9a988f;
     --emergency: #a81b4c; --emergency-bg: #fbe3ea;
+    /* v4.1 4단계: 룰의 "방향(direction)"은 빨강(나쁨)/파랑(좋음)/회색(중립)으로, "거시"
+       (CTX1/ECOS)는 노랑 계열로 분리 — 멘토 리뷰(색 하나로 등급/방향을 섞어 쓰지 말 것).
+       등급 "낮음"도 초록 대신 회색으로(초록=direction positive와 혼동 방지). */
+    --positive: #2a6fdb; --positive-bg: #eaf1fc;
+    --macro: #9a6a00; --macro-bg: #fef6e3;
+    --low-grade: #6b6a64; --low-grade-bg: #efeeea;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -32,6 +38,9 @@
       --critical-bg: #3a1f1f; --warning-bg: #352c15; --good-bg: #163316; --muted-bg: #242422;
       --prior: #6b6a64;
       --emergency: #ff6b9d; --emergency-bg: #3a1526;
+      --positive: #6ca2f0; --positive-bg: #1c2b40;
+      --macro: #f0c04e; --macro-bg: #352c15;
+      --low-grade: #a09e94; --low-grade-bg: #242422;
     }
   }
   :root[data-theme="dark"] {
@@ -45,6 +54,9 @@
     --critical-bg: #3a1f1f; --warning-bg: #352c15; --good-bg: #163316; --muted-bg: #242422;
     --prior: #6b6a64;
     --emergency: #ff6b9d; --emergency-bg: #3a1526;
+    --positive: #6ca2f0; --positive-bg: #1c2b40;
+    --macro: #f0c04e; --macro-bg: #352c15;
+    --low-grade: #a09e94; --low-grade-bg: #242422;
   }
   * { box-sizing: border-box; }
   body {
@@ -96,17 +108,31 @@
   .filter label { font-size: 10.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
   .filter select, .filter input { font-family: inherit; font-size: 12.5px; padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); min-width: 108px; }
 
-  .kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
-  .kpi-card { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  /* v4.1 4단계: "지금 먼저 볼 기업"이 화면의 주인공, KPI 숫자는 보조 — 멘토 리뷰
+     ("통계보다 누굴 봐야 하는지가 먼저 보여야 함"). KPI는 5개 가로 그리드에서 세로
+     보조 컬럼(4개)으로 축소, 히어로 블록과 나란히 둔다. */
+  .hero-row { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
+  .hero-priority { flex: 2 1 480px; min-width: 0; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px; }
+  .hero-title { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+  .hero-card { display: flex; gap: 12px; align-items: flex-start; padding: 12px 6px; border-radius: 8px; border-bottom: 1px solid var(--grid); cursor: pointer; }
+  .hero-card:last-child { border-bottom: none; }
+  .hero-card:hover { background: var(--muted-bg); }
+  .hero-rank { width: 26px; height: 26px; border-radius: 50%; background: var(--muted-bg); color: var(--text-secondary); font-size: 12.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .hero-body { flex: 1; min-width: 0; }
+  .hero-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 5px; }
+  .hero-name-row .corp { font-size: 16px; font-weight: 700; }
+  .hero-reason { font-size: 13.5px; color: var(--text-primary); line-height: 1.5; }
+  .hero-reason-2 { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 3px; }
+
+  .kpi-row { flex: 1 1 230px; display: flex; flex-direction: column; gap: 8px; min-width: 210px; }
+  .kpi-card { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 10px; padding: 9px 13px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .kpi-card.emphasis { border: 1.5px solid var(--critical); background: var(--critical-bg); }
-  .kpi-card.emphasis .kpi-value { font-size: 30px; }
-  .kpi-top { display: flex; justify-content: space-between; align-items: flex-start; }
-  .kpi-icon { width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .kpi-icon svg { width: 15px; height: 15px; }
-  .kpi-label { font-size: 11.5px; color: var(--text-secondary); font-weight: 600; }
-  .kpi-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
-  .kpi-value sub { font-size: 12px; font-weight: 500; color: var(--text-muted); margin-left: 2px; }
-  .kpi-delta { font-size: 11px; color: var(--text-muted); }
+  .kpi-icon { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .kpi-icon svg { width: 13px; height: 13px; }
+  .kpi-label { font-size: 11px; color: var(--text-secondary); font-weight: 600; }
+  .kpi-value { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+  .kpi-value sub { font-size: 11px; font-weight: 500; color: var(--text-muted); margin-left: 2px; }
+  .kpi-delta { font-size: 10.5px; color: var(--text-muted); }
 
   .grid-3 { display: grid; grid-template-columns: 1.1fr 1.3fr 1fr; gap: 14px; align-items: stretch; }
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -154,14 +180,20 @@
   .badge-mid { background: var(--warning-bg); color: #9a6a00; }
   .badge-low { background: var(--good-bg); color: var(--good); }
   .badge-none { background: var(--muted-bg); color: var(--text-muted); }
+  /* v4.1 4단계: 등급 배지는 "낮음"도 회색으로(초록은 direction positive 전용으로
+     비워둠 - 멘토 리뷰: 색 하나로 등급/방향을 섞어 쓰지 말 것). 기존 .badge-low는
+     "연결됨" 같은 다른 용도로도 쓰여서 그대로 두고, 등급 전용 클래스를 새로 둔다. */
+  .badge-grade-low { background: var(--low-grade-bg); color: var(--low-grade); }
+  .badge-macro { background: var(--macro-bg); color: var(--macro); }
   .rule-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 8px; background: var(--muted-bg); color: var(--text-secondary); font-family: "IBM Plex Mono", monospace; white-space: nowrap; flex-shrink: 0; }
-  .rule-chip.positive { background: var(--good-bg); color: var(--good); }
+  .rule-chip.positive { background: var(--positive-bg); color: var(--positive); }
   .rule-chip.negative { background: var(--critical-bg); color: var(--critical); }
   .rule-chip.neutral { background: var(--muted-bg); color: var(--text-secondary); }
   .reason-headline { font-size: 14px; font-weight: 600; color: var(--text-primary); line-height: 1.6; }
   .reason-sub { font-size: 13px; color: var(--text-secondary); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .basis-counts { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
   .transition-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 99px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
-  .transition-badge.to-positive { background: var(--good-bg); color: var(--good); }
+  .transition-badge.to-positive { background: var(--positive-bg); color: var(--positive); }
   .transition-badge.to-negative { background: var(--critical-bg); color: var(--critical); }
   .section-block { display: flex; flex-direction: column; gap: 10px; }
   .section-head { display: flex; align-items: baseline; gap: 10px; }
@@ -195,8 +227,8 @@
   .chart-tip .tip-row .v { font-family: "IBM Plex Mono", monospace; font-weight: 700; }
   .chart-tip .tip-row .v.prior { color: var(--text-muted); font-weight: 500; }
   .chart-hint { font-size: 10.5px; color: var(--text-muted); }
-  .ctx-line { display: flex; align-items: center; gap: 8px; background: var(--warning-bg); border-radius: 9px; padding: 9px 13px; font-size: 11.5px; color: #7a5500; line-height: 1.5; }
-  .ctx-line svg { width: 15px; height: 15px; flex-shrink: 0; color: #9a6a00; }
+  .ctx-line { display: flex; align-items: center; gap: 8px; background: var(--macro-bg); border-radius: 9px; padding: 9px 13px; font-size: 12.5px; color: var(--macro); line-height: 1.5; }
+  .ctx-line svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--macro); }
   a.dart-link { color: var(--brand); text-decoration: none; font-weight: 600; font-size: 11.5px; white-space: nowrap; }
   a.dart-link:hover { text-decoration: underline; }
 
@@ -290,11 +322,14 @@
           <div class="filter"><label>기업</label><select id="f-corp"><option value="all">전체</option></select></div>
         </div>
       </div>
-      <div class="kpi-row" id="kpi-row"></div>
+      <div class="hero-row">
+        <div class="hero-priority" id="hero-priority"></div>
+        <div class="kpi-row" id="kpi-row"></div>
+      </div>
       <div class="grid-3">
         <div class="panel">
           <div class="panel-head"><div class="panel-title">기업별 재검토 우선순위</div>
-            <div class="legend"><div class="legend-item"><span class="legend-dot" style="background:var(--emergency)"></span>긴급확인</div><div class="legend-item"><span class="legend-dot" style="background:var(--critical)"></span>높음</div><div class="legend-item"><span class="legend-dot" style="background:var(--warning)"></span>중간</div><div class="legend-item"><span class="legend-dot" style="background:var(--good)"></span>낮음</div></div>
+            <div class="legend"><div class="legend-item"><span class="legend-dot" style="background:var(--emergency)"></span>긴급확인</div><div class="legend-item"><span class="legend-dot" style="background:var(--critical)"></span>높음</div><div class="legend-item"><span class="legend-dot" style="background:var(--warning)"></span>중간</div><div class="legend-item"><span class="legend-dot" style="background:var(--low-grade)"></span>낮음</div></div>
           </div>
           <div id="rank-chart" style="display:flex; flex-direction:column; gap:9px;"></div>
         </div>
@@ -325,7 +360,6 @@
         <div class="filters"><div class="filter"><label>기업 선택</label><select id="d-corp" class="company-select"></select></div><div class="filter"><label>검토 기준일</label><input id="d-review-date" type="text" readonly></div></div>
       </div>
       <div class="detail-banner" id="detail-banner"></div>
-      <div id="ctx-line"></div>
 
       <div class="section-block">
         <div class="section-head">
@@ -374,6 +408,14 @@
         <div class="panel"><div class="panel-head"><div class="panel-title" id="d-new-title">신규 공시 목록</div></div><div class="table-wrap"><table id="detail-new-table"></table></div></div>
       </div>
 
+      <div class="section-block">
+        <div class="section-head">
+          <div class="section-num">4</div>
+          <div><div class="section-title-main">거시 배경 (기준금리)</div><div class="section-title-sub">점수·등급에는 반영 안 됨 — 참고용. 금리가 바뀌었고 이 기업이 차입 의존도가 높을 때만 표시.</div></div>
+        </div>
+        <div class="panel" id="detail-macro"></div>
+      </div>
+
       <div class="footer-bar" id="footer-detail"></div>
     </section>
   </main>
@@ -393,9 +435,11 @@
   const fmtDate = (s) => s ? s.replace(/-/g, ".") : "—";
   const dartUrl = (rcept) => `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rcept}`;
   const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  const levelColor = { emergency: "var(--emergency)", high: "var(--critical)", mid: "var(--warning)", low: "var(--good)", none: "var(--text-muted)" };
+  // v4.1 4단계: "낮음"을 초록(--good)에서 회색(--low-grade)으로 - 초록은 direction
+  // positive 전용으로 비워서 "등급"과 "방향"이 같은 색으로 안 섞이게 함(멘토 리뷰).
+  const levelColor = { emergency: "var(--emergency)", high: "var(--critical)", mid: "var(--warning)", low: "var(--low-grade)", none: "var(--text-muted)" };
   const levelLabel = { emergency: "긴급확인", high: "높음", mid: "중간", low: "낮음", none: "없음" };
-  const levelBadgeClass = { emergency: "badge-emergency", high: "badge-high", mid: "badge-mid", low: "badge-low", none: "badge-none" };
+  const levelBadgeClass = { emergency: "badge-emergency", high: "badge-high", mid: "badge-mid", low: "badge-grade-low", none: "badge-none" };
 
   // v4.0: "점수를 더해서 등급을 안 만든다" - 기업 등급은 대표 사건 하나로 정해지므로
   // positive_score/forced_high/15점 cap 표시는 전부 사라졌다. 대신 대표사건 외에
@@ -476,6 +520,10 @@
     const row = e.target.closest(".rank-row[data-corp]");
     if (row) goToDetail(row.dataset.corp);
   });
+  document.getElementById("hero-priority").addEventListener("click", (e) => {
+    const card = e.target.closest(".hero-card[data-corp]");
+    if (card) goToDetail(card.dataset.corp);
+  });
 
   function companyById() {
     const m = {};
@@ -514,8 +562,9 @@
     if (oldBanner) oldBanner.remove();
     safe("renderCompanyChips", renderCompanyChips);
     if (!DATA || !DATA.company_priority.length) {
-      document.getElementById("kpi-row").innerHTML = '<div class="placeholder" style="grid-column:1/-1">아직 분석된 기업이 없습니다. 위에서 종목코드를 입력하고 "분석 시작"을 눌러주세요.</div>';
-      ["rank-chart","trend-chart","sel-summary","fin-top-table","corr-top-table","dist-chart","detail-banner","detail-fin-table","detail-rules","slope-chart","detail-new-table","detail-corr-table","ai-explain"].forEach(id => document.getElementById(id).innerHTML = "");
+      document.getElementById("hero-priority").innerHTML = '<div class="placeholder">아직 분석된 기업이 없습니다. 위에서 종목코드를 입력하고 "분석 시작"을 눌러주세요.</div>';
+      document.getElementById("kpi-row").innerHTML = "";
+      ["rank-chart","trend-chart","sel-summary","fin-top-table","corr-top-table","dist-chart","detail-banner","detail-fin-table","detail-rules","slope-chart","detail-new-table","detail-corr-table","ai-explain","detail-macro"].forEach(id => document.getElementById(id).innerHTML = "");
       document.getElementById("f-corp").innerHTML = '<option value="all">전체</option>';
       document.getElementById("d-corp").innerHTML = "";
       return;
@@ -531,6 +580,7 @@
     const rankedForSelect = DATA.company_priority.slice().sort((a,b)=>b.priority_score-a.priority_score);
     dCorpSelect.innerHTML = rankedForSelect.map(cp => `<option value="${cp.corp_code}">${esc(cp.corp_name)} (${cbid[cp.corp_code].stock_code})</option>`).join("");
 
+    safe("renderHeroPriority", renderHeroPriority);
     safe("renderKPIs", renderKPIs);
     safe("renderRankChart", renderRankChart);
     safe("renderTrendChart", renderTrendChart);
@@ -559,31 +609,57 @@
     };
   }
 
+  // v4.1 4단계: 멘토 리뷰 순서대로 재배열 - ①재검토 필요(emergency+high, mid는 제외)
+  // ②긴급확인 ③금리 영향 재확인 기업 수(3단계 ECOS) ④신규·정정 공시 건수. 기존
+  // "변화 발생 기업 수"/"재무 변화 이벤트 수"는 히어로 블록이 그 역할을 대신하므로 뺌.
   function renderKPIs() {
     const nonCorrection = DATA.disclosures.filter((d) => !d.is_correction).length;
     const corrections = DATA.disclosures.filter((d) => d.is_correction).length;
-    const financialEvents = DATA.change_events.filter((e) => e.change_type === "financial").length;
-    const changedCompanies = DATA.company_priority.filter((c) => c.change_count > 0).length;
-    const priorityCompanies = DATA.company_priority.filter((c) => ["emergency", "high", "mid"].includes(c.priority_level)).length;
+    const needsReview = DATA.company_priority.filter((c) => ["emergency", "high"].includes(c.priority_level)).length;
+    const emergencyCount = DATA.company_priority.filter((c) => c.priority_level === "emergency").length;
+    const kpiDaily = (DATA.kpi_daily || [])[0] || {};
+    const rateValue = kpiDaily.rate_changed ? String(kpiDaily.rate_exposed_companies ?? 0) : "변경 없음";
+    const rateUnit = kpiDaily.rate_changed ? "개사" : "";
     const kpis = [
-      { label: "재검토 우선 기업 수", value: priorityCompanies, unit: "개사", icon: "flag", color: "var(--critical)", emphasis: true },
-      { label: "변화 발생 기업 수", value: changedCompanies, unit: "개사", icon: "building", color: "var(--brand)" },
-      { label: "신규 공시 수", value: nonCorrection, unit: "건", icon: "doc", color: "var(--series-3)" },
-      { label: "정정 공시 수", value: corrections, unit: "건", icon: "edit", color: "var(--warning)" },
-      { label: "재무 변화 이벤트 수", value: financialEvents, unit: "건", icon: "chart", color: "var(--series-2)" },
+      { label: "재검토 필요 기업 수", value: needsReview, unit: "개사", icon: "flag", color: "var(--critical)", emphasis: true },
+      { label: "긴급확인 기업 수", value: emergencyCount, unit: "개사", icon: "alert", color: "var(--emergency)" },
+      { label: "금리 영향 재확인 기업 수", value: rateValue, unit: rateUnit, icon: "percent", color: "var(--macro)" },
+      { label: "신규·정정 공시", value: `${nonCorrection} · ${corrections}`, unit: "건", icon: "doc", color: "var(--series-3)" },
     ];
     const icons = {
-      building: '<rect x="4" y="3" width="16" height="18" rx="1.5" stroke="currentColor" stroke-width="2"/><path d="M8 8h2M14 8h2M8 12h2M14 12h2M8 16h2M14 16h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
       flag: '<path d="M5 3v18M5 4h11l-2.5 4L16 12H5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+      alert: '<path d="M12 3L2 20h20L12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      percent: '<circle cx="7" cy="7" r="2.5" stroke="currentColor" stroke-width="2"/><circle cx="17" cy="17" r="2.5" stroke="currentColor" stroke-width="2"/><path d="M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
       doc: '<path d="M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 3v5h5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
-      edit: '<path d="M12 20h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
-      chart: '<path d="M4 20V10M11 20V4M18 20v-7" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>',
     };
     document.getElementById("kpi-row").innerHTML = kpis.map((k) => `
       <div class="kpi-card${k.emphasis ? " emphasis" : ""}">
-        <div class="kpi-top"><div class="kpi-label">${k.label}${k.emphasis ? " — 지금 봐야 할 기업" : ""}</div><div class="kpi-icon" style="background:${k.color}22; color:${k.color}"><svg viewBox="0 0 24 24" fill="none">${icons[k.icon]}</svg></div></div>
-        <div class="kpi-value num">${k.value}<sub>${k.unit}</sub></div>
-        <div class="kpi-delta">직전 점검 대비 비교 불가 (최초 실행)</div>
+        <div><div class="kpi-label">${k.label}</div><div class="kpi-value num">${k.value}<sub>${k.unit}</sub></div></div>
+        <div class="kpi-icon" style="background:${k.color}22; color:${k.color}"><svg viewBox="0 0 24 24" fill="none">${icons[k.icon]}</svg></div>
+      </div>`).join("");
+  }
+
+  // v4.1 4단계: 화면 맨 위, 제일 크게 - "지금 먼저 볼 기업" (상위 1~3개, 건수/rule_id
+  // 없이 기업명·등급·대표 사유·2순위 사유만). KPI 통계보다 이게 먼저 보여야 한다는
+  // 멘토 리뷰 반영.
+  function renderHeroPriority() {
+    const ranked = DATA.company_priority.slice()
+      .filter((r) => r.priority_level !== "none")
+      .sort((a, b) => (b.is_emergency - a.is_emergency) || (b.priority_score - a.priority_score));
+    const top = ranked.slice(0, 3);
+    const el = document.getElementById("hero-priority");
+    if (!top.length) {
+      el.innerHTML = `<div class="hero-title">지금 먼저 볼 기업</div><div class="empty-note">지금 재검토가 필요한 기업이 없습니다.</div>`;
+      return;
+    }
+    el.innerHTML = `<div class="hero-title">지금 먼저 볼 기업</div>` + top.map((r, i) => `
+      <div class="hero-card" data-corp="${r.corp_code}">
+        <div class="hero-rank">${i + 1}</div>
+        <div class="hero-body">
+          <div class="hero-name-row"><span class="corp">${esc(r.corp_name)}</span><span class="badge ${levelBadgeClass[r.priority_level]}">${levelLabel[r.priority_level]}</span></div>
+          ${r.reason_text ? `<div class="hero-reason">${esc(r.reason_text)}</div>` : ""}
+          ${r.reason_text_2 ? `<div class="hero-reason-2">· ${esc(r.reason_text_2)}</div>` : ""}
+        </div>
       </div>`).join("");
   }
 
@@ -612,8 +688,19 @@
           </div>
           <div class="rank-track"><div class="rank-fill" style="width:${pct}%; background:${levelColor[r.priority_level]}"></div></div>
           ${reason ? `<div class="reason-sub" title="${esc(reason)}">${esc(reason)}</div>` : ""}
+          ${basisCountsHtml(r)}
         </div>`;
     }).join("");
+  }
+
+  // v4.1 4단계: YoY/정정/신규가 서로 다른 비교축이라는 걸 랭킹 목록에서도 바로
+  // 구분할 수 있게 - 전부 0건인 기업(예: priority_level='none')은 생략.
+  function basisCountsHtml(r) {
+    const parts = [];
+    if (r.yoy_event_count > 0) parts.push(`전년동기 ${r.yoy_event_count}`);
+    if (r.correction_event_count > 0) parts.push(`정정 ${r.correction_event_count}`);
+    if (r.new_event_count > 0) parts.push(`신규 ${r.new_event_count}`);
+    return parts.length ? `<div class="basis-counts">${parts.join(" · ")}</div>` : "";
   }
 
   function isoWeek(dateStr) {
@@ -898,7 +985,7 @@
       <div class="stat"><div class="v">${cp.financial_rule_count}건</div><div class="l">재무 변화</div></div>
       <div class="divider"></div><div style="display:flex; gap:5px; flex-wrap:wrap;">${rules.map((r) => ruleChipHtml(r, ruleDirectionFor(corpCode, r))).join("") || '<span class="empty-note">적용된 Rule 없음</span>'}</div>`;
 
-    renderCtxLine(corpCode, events);
+    renderMacroCard(cp);
 
     const byAccount = latestFinancials(corpCode);
     const order = ["REVENUE", "OP_INCOME", "OCF", "TOTAL_LIAB", "BORROWINGS"];
@@ -930,13 +1017,17 @@
     document.getElementById("footer-detail").textContent = `검토 기준일: ${fmtDate((DATA.kpi_daily[0]||{}).review_date)} · 상단에서 다시 분석하면 최신화됩니다.`;
   }
 
-  function renderCtxLine(corpCode, events) {
-    const el = document.getElementById("ctx-line");
-    const ctx = (DATA.rate_context || [])[0];
-    const hasBorrowingSignal = events.some((e) => e.rule_id === "D1" || e.rule_id === "F5");
-    if (!ctx || !hasBorrowingSignal || ctx.rate_direction !== "up") { el.innerHTML = ""; return; }
+  // v4.1 4단계: 3단계(ECOS)에서 기업별로 직접 계산해둔 rate_exposure/rate_context_text를
+  // 그대로 쓴다 - 예전엔 DATA.rate_context[0](전역 1행, 보는 기업과 무관)을 긁어다
+  // 썼는데, 이제 company_priority에 기업별 결과가 이미 들어있어 그걸 쓰면 된다.
+  function renderMacroCard(cp) {
+    const el = document.getElementById("detail-macro");
+    if (!cp.rate_exposure) {
+      el.innerHTML = '<div class="empty-note">해당 없음 — 마지막 검토 이후 기준금리 변경이 없었거나, 이 기업은 차입 관련 신호가 없었습니다.</div>';
+      return;
+    }
     const icon = '<svg viewBox="0 0 24 24" fill="none"><path d="M3 17l6-6 4 4 8-8M21 7v6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    el.innerHTML = `<div class="ctx-line">${icon}<span><b>기준금리 맥락</b> — 기준금리가 ${ctx.prior_base_rate}% → ${ctx.base_rate}%로 상승하는 동안 이 기업은 차입금(단기차입금 포함)이 늘었습니다. 금리 상승기의 차입 증가는 이자비용 부담을 더 키울 수 있어, 재검토 시 이자보상배율도 함께 확인하는 걸 권합니다.</span></div>`;
+    el.innerHTML = `<div class="ctx-line">${icon}<span><b>금리 영향 재확인</b> — ${esc(cp.rate_context_text || "")}</span></div>`;
   }
 
   function renderAiExplain(corpCode) {
