@@ -111,9 +111,13 @@ INSERT INTO core.rule_catalog (rule_id, rule_type, description, base_score, doma
     ('D10', 'disclosure', '채무보증·담보제공 결정 공시', 6, '레버리지', false, NULL, true,
         '신설(v4.1). D1/D2와 같은 자금조달 압박 신호 유형 — 거래소 의무공시 항목. 구조화된
          보증금액/자기자본 비율 데이터가 없어 밴드 없는 단일 점수(팀 설정값).'),
-    ('CTX1', 'context', '기준금리 상승 + 차입금 증가 (가산 없음, 맥락 표시 전용)', 0, NULL, false, '(6)(11)', false,
+    ('CTX1', 'context', '마지막 검토 이후 기준금리 변경 시 차입 의존도 높은 기업을 금리 영향
+        재확인 대상으로 표시(점수·등급 미반영)', 0, NULL, false, '(6)(11)', false,
         '차입비용 상승이 이자보상배율을 악화시킨다는 한국은행 관계자 설명.
-         mart.rate_context에 표시만, 점수·등급에는 반영 안 함. v4.0 개편과 무관 — 그대로 유지.')
+         v4.1: 검토일당 1행(숫자만 표시)에서 검토일+기업 단위로 개편 — 차입 의존도가
+         높거나 최근 차입 관련 공시(F5/D1/D10)가 있는 기업에 직접 노출시켜 "그래서
+         어떤 기업을 봐야 하는지"가 드러나게 함(팀 리뷰). 여전히 대표사건 선출에서는
+         제외(run_rules.aggregate_company_priority), 점수·등급에는 영향 없음.')
 ON CONFLICT (rule_id) DO UPDATE SET
     rule_type = EXCLUDED.rule_type,
     description = EXCLUDED.description,

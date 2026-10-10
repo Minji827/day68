@@ -707,47 +707,106 @@ def rule_d10(cur, review_date: str, base_score: int) -> int:
 
 
 def context_rate_vs_borrowings(cur, review_date: str) -> None:
-    """CTX1: 기준금리 상승 + 차입금 증가 -> 점수 반영 없이 mart.rate_context에 맥락만
-    기록. v4.0 개편과 무관 - 그대로 유지."""
+    """CTX1(v4.1 3단계 전면 개정): 기존엔 기준금리 숫자만 1행 보여주고 끝이었는데,
+    "검토일 이후 금리가 바뀌었고, 이 기업이 차입 의존도가 높다"를 기업별로 직접
+    연결한다 - "그래서 뭐?"가 없다는 팀 리뷰 반영. 점수·등급에는 여전히 반영 안 함
+    (compare_basis='MACRO', aggregate_company_priority의 대표사건 선출에서 제외).
+
+    rate_at_review(검토일 시점 기준금리) vs rate_now(적재된 최신 관측치) 비교 -> 같으면
+    mart.rate_context에 변경없음 마커 1행만 쓰고 종료. 다르면 대상 기업 선정: 원래는
+    BORROWINGS/TOTAL_ASSETS>=0.30 조건도 쓰기로 했으나 TOTAL_ASSETS가 SQL엔진에
+    적재돼 있지 않아(알려진 제약, README 참고) 이 조건은 건너뛰고 같은 리뷰에 F5/D1/D10
+    이벤트가 있는 기업만으로 대상을 선정한다."""
     cur.execute(
         """
-        SELECT obs_date, value FROM core.rate_observations
+        SELECT value FROM core.rate_observations
         WHERE stat_code = '722Y001' AND item_code = '0101000' AND obs_date <= %s
         ORDER BY obs_date DESC LIMIT 1
         """,
         (review_date,),
     )
-    latest = cur.fetchone()
-    if not latest:
-        print("CTX1: 기준금리 관측치 없음 - skip")
-        return
-    latest_date, latest_rate = latest
+    row = cur.fetchone()
+    rate_at_review = row[0] if row else None
 
     cur.execute(
         """
-        SELECT obs_date, value FROM core.rate_observations
-        WHERE stat_code = '722Y001' AND item_code = '0101000' AND obs_date < %s
+        SELECT value FROM core.rate_observations
+        WHERE stat_code = '722Y001' AND item_code = '0101000'
         ORDER BY obs_date DESC LIMIT 1
         """,
-        (latest_date,),
     )
-    prior = cur.fetchone()
-    prior_rate = prior[1] if prior else None
-    direction = "flat"
-    if prior_rate is not None:
-        if latest_rate > prior_rate:
-            direction = "up"
-        elif latest_rate < prior_rate:
-            direction = "down"
+    row = cur.fetchone()
+    rate_now = row[0] if row else None
 
+    if rate_at_review is None or rate_now is None:
+        print("CTX1: 기준금리 관측치 없음 - skip")
+        return
+
+    if rate_at_review == rate_now:
+        cur.execute(
+            """
+            INSERT INTO mart.rate_context
+                (review_date, corp_code, rate_at_review, rate_now, rate_direction)
+            VALUES (%s, '__ALL__', %s, %s, 'flat')
+            """,
+            (review_date, rate_at_review, rate_now),
+        )
+        print(f"CTX1: 기준금리 변경 없음 ({rate_now}%)")
+        return
+
+    direction = "up" if rate_now > rate_at_review else "down"
+    ctx1_direction = "negative" if direction == "up" else "positive"
+
+    print("CTX1: TOTAL_ASSETS 미적재 - 자산대비 차입비율 조건은 건너뛰고 F5/D1/D10 "
+          "이벤트 기준으로만 대상 기업 선정")
     cur.execute(
         """
-        INSERT INTO mart.rate_context (review_date, base_rate, prior_base_rate, rate_direction)
-        VALUES (%s, %s, %s, %s)
+        SELECT DISTINCT corp_code, corp_name FROM mart.change_events
+        WHERE review_date = %(rd)s AND rule_id IN ('F5', 'D1', 'D10')
         """,
-        (review_date, latest_rate, prior_rate, direction),
+        {"rd": review_date},
     )
-    print(f"CTX1: 기준금리 {prior_rate} -> {latest_rate} ({direction})")
+    targets = cur.fetchall()
+
+    for corp_code, corp_name in targets:
+        cur.execute(
+            """
+            SELECT rule_id, change_rate FROM mart.change_events
+            WHERE review_date = %(rd)s AND corp_code = %(cc)s AND rule_id IN ('F5', 'D1')
+            """,
+            {"rd": review_date, "cc": corp_code},
+        )
+        evs = cur.fetchall()
+        f5_rate = next((rate for rid, rate in evs if rid == "F5" and rate is not None), None)
+        has_d1 = any(rid == "D1" for rid, _ in evs)
+
+        parts = [f"기준금리 {rate_at_review}% -> {rate_now}% ({'인상' if direction == 'up' else '인하'})"]
+        if f5_rate is not None:
+            parts.append(f"차입금 전년 동기 대비 +{f5_rate:.1f}%")
+        if has_d1:
+            parts.append("단기차입 증가 공시")
+        exposure_reason = ", ".join(parts) + " -> 이자비용 변화 재확인"
+
+        cur.execute(
+            """
+            INSERT INTO mart.rate_context
+                (review_date, corp_code, rate_at_review, rate_now, rate_direction, exposure_reason)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (review_date, corp_code, rate_at_review, rate_now, direction, exposure_reason),
+        )
+        cur.execute(
+            """
+            INSERT INTO mart.change_events
+                (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
+                 direction, description, compare_basis, basis_label)
+            VALUES (%s, %s, %s, 'context', 'CTX1', '참고', 0, false, %s, %s, 'MACRO',
+                    '마지막 검토 이후 기준금리 변경')
+            """,
+            (corp_code, corp_name, review_date, ctx1_direction, f"[거시] {exposure_reason}"),
+        )
+
+    print(f"CTX1: 기준금리 {rate_at_review} -> {rate_now} ({direction}), 대상 기업 {len(targets)}개")
 
 
 def aggregate_company_priority(cur, review_date: str) -> None:
@@ -789,7 +848,10 @@ def aggregate_company_priority(cur, review_date: str) -> None:
                                 CASE WHEN ce.rule_id LIKE 'F%%' THEN 0 ELSE 1 END, ce.rule_id ASC
                    ) AS rn
             FROM mart.change_events ce
-            WHERE ce.review_date = %(rd)s AND NOT ce.is_grouped_duplicate
+            -- CTX1(change_type='context')은 점수·등급 미반영 참고용이라 대표사건 후보에서
+            -- 제외(v4.1 3단계) - 안 그러면 다른 이벤트가 하나도 없는 회사에서 CTX1이
+            -- 대표로 뽑혀 grade='참고'가 엉뚱하게 'low'로 매핑되는 문제가 생긴다.
+            WHERE ce.review_date = %(rd)s AND NOT ce.is_grouped_duplicate AND ce.change_type <> 'context'
         ),
         counts AS (
             SELECT corp_code, corp_name,
@@ -799,7 +861,7 @@ def aggregate_company_priority(cur, review_date: str) -> None:
                    count(*) FILTER (WHERE compare_basis = 'YOY') AS yoy_event_count,
                    count(*) FILTER (WHERE compare_basis = 'CORRECTION') AS correction_event_count,
                    count(*) FILTER (WHERE compare_basis = 'NEW_EVENT') AS new_event_count
-            FROM mart.change_events WHERE review_date = %(rd)s
+            FROM mart.change_events WHERE review_date = %(rd)s AND change_type <> 'context'
             GROUP BY corp_code, corp_name
         ),
         additional AS (
@@ -809,12 +871,17 @@ def aggregate_company_priority(cur, review_date: str) -> None:
         ),
         second AS (
             SELECT corp_code, description FROM scored WHERE rn = 2
+        ),
+        rate AS (
+            SELECT corp_code, exposure_reason FROM mart.rate_context
+            WHERE review_date = %(rd)s AND corp_code <> '__ALL__'
         )
         INSERT INTO mart.company_priority
             (corp_code, corp_name, review_date, priority_level, priority_score, is_emergency,
              top_rule_id, top_event_id, additional_important_events, reason_text, reason_text_2,
              change_count, financial_rule_count, disclosure_rule_count,
-             yoy_event_count, correction_event_count, new_event_count)
+             yoy_event_count, correction_event_count, new_event_count,
+             rate_exposure, rate_context_text)
         SELECT
             c.corp_code, c.corp_name, %(rd)s,
             CASE WHEN s.is_emergency THEN 'emergency'
@@ -822,11 +889,13 @@ def aggregate_company_priority(cur, review_date: str) -> None:
                  ELSE 'low' END,
             s.score, s.is_emergency, s.rule_id, s.event_id, COALESCE(a.n, 0), s.description, d2.description,
             c.change_count, c.financial_rule_count, c.disclosure_rule_count,
-            c.yoy_event_count, c.correction_event_count, c.new_event_count
+            c.yoy_event_count, c.correction_event_count, c.new_event_count,
+            (r.corp_code IS NOT NULL), r.exposure_reason
         FROM counts c
         JOIN scored s ON s.corp_code = c.corp_code AND s.rn = 1
         LEFT JOIN additional a ON a.corp_code = c.corp_code
         LEFT JOIN second d2 ON d2.corp_code = c.corp_code
+        LEFT JOIN rate r ON r.corp_code = c.corp_code
         """,
         {"rd": review_date},
     )
@@ -837,14 +906,18 @@ def aggregate_kpi(cur, review_date: str) -> None:
     cur.execute(
         """
         INSERT INTO mart.kpi_daily
-            (review_date, companies_changed, companies_high_priority, new_disclosures, corrections)
+            (review_date, companies_changed, companies_high_priority, new_disclosures, corrections,
+             rate_changed, rate_exposed_companies)
         VALUES (
             %(rd)s,
             (SELECT count(*) FROM mart.company_priority WHERE review_date = %(rd)s),
             (SELECT count(*) FROM mart.company_priority WHERE review_date = %(rd)s
                 AND priority_level IN ('emergency', 'high')),
             (SELECT count(*) FROM core.disclosures WHERE rcept_dt > %(rd)s),
-            (SELECT count(*) FROM core.disclosures WHERE rcept_dt > %(rd)s AND is_correction)
+            (SELECT count(*) FROM core.disclosures WHERE rcept_dt > %(rd)s AND is_correction),
+            (SELECT EXISTS(SELECT 1 FROM mart.rate_context
+                WHERE review_date = %(rd)s AND corp_code <> '__ALL__')),
+            (SELECT count(*) FROM mart.rate_context WHERE review_date = %(rd)s AND corp_code <> '__ALL__')
         )
         """,
         {"rd": review_date},

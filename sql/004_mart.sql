@@ -28,16 +28,18 @@ CREATE INDEX IF NOT EXISTS ix_mart_change_events_rule ON mart.change_events (rev
 -- direction이 다를 수 있어 더 이상 rule_catalog에서 join 못 함).
 ALTER TABLE mart.change_events DROP CONSTRAINT IF EXISTS change_events_change_type_check;
 ALTER TABLE mart.change_events ADD CONSTRAINT change_events_change_type_check
-    CHECK (change_type IN ('financial', 'disclosure'));
+    CHECK (change_type IN ('financial', 'disclosure', 'context'));
 ALTER TABLE mart.change_events DROP COLUMN IF EXISTS weight;
 ALTER TABLE mart.change_events ADD COLUMN IF NOT EXISTS grade text;
 ALTER TABLE mart.change_events ADD COLUMN IF NOT EXISTS score integer;
 ALTER TABLE mart.change_events ADD COLUMN IF NOT EXISTS is_emergency boolean NOT NULL DEFAULT false;
 ALTER TABLE mart.change_events ADD COLUMN IF NOT EXISTS direction text
     CHECK (direction IN ('positive', 'negative', 'neutral'));
+-- v4.1 3단계: CTX1(ECOS 거시 맥락)은 점수·등급에 반영 안 되는 "참고" 전용 이벤트라
+-- 긴급확인/높음/중간/낮음 어디에도 안 들어가는 별도 grade('참고')가 필요.
 ALTER TABLE mart.change_events DROP CONSTRAINT IF EXISTS change_events_grade_check;
 ALTER TABLE mart.change_events ADD CONSTRAINT change_events_grade_check
-    CHECK (grade IN ('긴급확인', '높음', '중간', '낮음'));
+    CHECK (grade IN ('긴급확인', '높음', '중간', '낮음', '참고'));
 
 -- v4.1: 어느 룰 버전으로 계산된 행인지 추적(점수표가 또 바뀔 때 과거 행과 구분 가능하게).
 -- run_rules.py가 매번 새로 INSERT하므로 DEFAULT만으로 모든 신규 행에 자동 기록됨 -
@@ -97,6 +99,11 @@ ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS yoy_event_count integ
 ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS correction_event_count integer NOT NULL DEFAULT 0;
 ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS new_event_count integer NOT NULL DEFAULT 0;
 
+-- v4.1 3단계: 이 기업이 "금리 변경 + 차입 의존" 노출 대상인지, 그 사유 설명.
+-- run_rules.aggregate_company_priority가 mart.rate_context를 조인해서 채운다.
+ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS rate_exposure boolean NOT NULL DEFAULT false;
+ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS rate_context_text text;
+
 -- 해설문장(접수번호·문장번호), 근거 원문 섹션 필수
 CREATE TABLE IF NOT EXISTS mart.explanation_sentences (
     rcept_no          text NOT NULL,
@@ -116,11 +123,24 @@ CREATE TABLE IF NOT EXISTS mart.kpi_daily (
     new_disclosures         integer NOT NULL DEFAULT 0,
     corrections              integer NOT NULL DEFAULT 0
 );
+ALTER TABLE mart.kpi_daily ADD COLUMN IF NOT EXISTS rate_changed boolean NOT NULL DEFAULT false;
+ALTER TABLE mart.kpi_daily ADD COLUMN IF NOT EXISTS rate_exposed_companies integer NOT NULL DEFAULT 0;
 
 -- ECOS 기준금리 맥락 (차입금 증가 기업의 이자 부담 확인용 보조 맥락)
-CREATE TABLE IF NOT EXISTS mart.rate_context (
-    review_date       date PRIMARY KEY,
-    base_rate         numeric NOT NULL,
-    prior_base_rate   numeric,
-    rate_direction    text CHECK (rate_direction IN ('up', 'down', 'flat'))
-);
+--
+-- v4.1 3단계 전면 개정: 기존엔 "검토일당 1행"으로 기준금리 숫자만 보여줬는데, 어느
+-- 기업이랑 관련 있는지 연결이 없어 "그래서 뭐?"가 없다는 팀 리뷰 반영 — "검토일+기업"
+-- 단위로 바꿔서, 금리가 변경됐고 그 기업이 차입 의존도가 높거나 최근 차입 관련 공시가
+-- 있으면 그 기업에 직접 노출시킨다. **기존 PK(review_date 단독)를 바꾸는 breaking
+-- change — n8n/PowerBI 등 이 테이블을 직접 조회하는 다른 팀원에게 공지 필요(사용자 확인).**
+-- 금리가 안 바뀐 회차는 기업별로 행을 만들 대상이 없으므로, corp_code='__ALL__'
+-- (sentinel - 특정 기업 아님) 한 행만 "변경 없음" 마커로 남긴다.
+ALTER TABLE mart.rate_context DROP CONSTRAINT IF EXISTS rate_context_pkey;
+ALTER TABLE mart.rate_context ADD COLUMN IF NOT EXISTS corp_code text NOT NULL DEFAULT '__ALL__';
+ALTER TABLE mart.rate_context ADD COLUMN IF NOT EXISTS rate_at_review numeric;
+ALTER TABLE mart.rate_context ADD COLUMN IF NOT EXISTS rate_now numeric;
+ALTER TABLE mart.rate_context ADD COLUMN IF NOT EXISTS exposure_reason text;
+-- 구 컬럼명(base_rate/prior_base_rate)은 더 이상 안 씀 - rate_now/rate_at_review로 대체.
+ALTER TABLE mart.rate_context DROP COLUMN IF EXISTS base_rate;
+ALTER TABLE mart.rate_context DROP COLUMN IF EXISTS prior_base_rate;
+ALTER TABLE mart.rate_context ADD PRIMARY KEY (review_date, corp_code);
