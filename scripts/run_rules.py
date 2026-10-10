@@ -41,6 +41,15 @@ v4.1 2단계(compare_basis 분리): 모든 이벤트에 compare_basis('YOY'/'COR
 D5는 CORRECTION, 나머지 D-rule은 NEW_EVENT. MACRO는 아직 아무 룰도 안 씀(3단계
 ECOS 작업에서 CTX1이 쓸 예정).
 
+v4.3-1(버그 수정): "NEW_EVENT"(D2~D10, D5의 정정) 판정이 원래 `공시일 > review_date`
+(이번 실행 자체의 날짜, 보통 오늘)로 비교했는데, 이러면 "오늘보다 미래인 공시"는
+있을 수 없어 오늘 날짜로 실행하는 한 구조적으로 항상 0건이었다(실측: 이스트에이드의
+관리종목지정우려·거래정지 공시가 전부 과거 날짜라 D7/D8이 못 잡음 - 키워드는 맞게
+매칭되는데 날짜 비교가 막음). sql/007_views.sql의 core.last_review_before(corp_code,
+review_date) 함수(기업별 "이번 review_date보다 이전"인 가장 최근 mart.company_priority
+검토일)와 비교하도록 바꿨다. 직전 검토 이력이 없는 기업(처음 추가)은
+FIRST_REVIEW_LOOKBACK_DAYS로 폴백.
+
 Usage:
     python scripts/run_rules.py --review-date 2026-08-31
 """
@@ -70,6 +79,20 @@ D5_LABEL = {
 # SQL이 공유하는 grade CASE 식 - score 컬럼 하나를 참조해 등급을 매긴다.
 # src/rules/rule_engine_v40.py::_grade_from_score와 동일(8~10=높음,4~7=중간,1~3=낮음).
 _GRADE_CASE_SQL = "CASE WHEN {score} >= 8 THEN '높음' WHEN {score} >= 4 THEN '중간' ELSE '낮음' END"
+
+# v4.3-1: 기업을 처음 분석해서 core.last_review_before()가 NULL(직전 검토 이력 없음)을
+# 돌려줄 때 "신규 공시"로 간주할 룩백 윈도우(팀 결정: 분기 보고 주기와 맞춰 90일).
+FIRST_REVIEW_LOOKBACK_DAYS = 90
+
+# NEW_EVENT 계열 D-rule이 공통으로 쓰는 "신규 공시" 판정 - 기업별 직전 검토일(없으면
+# review_date - 룩백일) 이후에 올라온 공시만 신규로 본다. sql/007_views.sql의
+# core.last_review_before(corp_code, review_date)는 "이번 review_date보다 이전" 검토일만
+# 돌려주므로(과거 테스트 날짜를 비순차적으로 재실행해도 안전) - FROM절에 core.disclosures
+# d가 있어야 하고, 쿼리 파라미터에 rd/lookback을 같이 넘겨야 한다.
+_NEW_EVENT_WHERE_SQL = (
+    "d.rcept_dt > COALESCE(core.last_review_before(d.corp_code, %(rd)s::date), "
+    "%(rd)s::date - make_interval(days => %(lookback)s))"
+)
 
 
 def _grade_from_score(score: int) -> str:
@@ -455,7 +478,7 @@ def rule_d2(cur, review_date: str, base_score: int) -> int:
     신호로 보고 조건 확대(팀 리뷰)."""
     grade = _grade_from_score(base_score)
     cur.execute(
-        """
+        f"""
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
              direction, rcept_no, description, compare_basis, basis_label)
@@ -464,12 +487,12 @@ def rule_d2(cur, review_date: str, base_score: int) -> int:
                'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
-        WHERE d.rcept_dt > %(rd)s
+        WHERE {_NEW_EVENT_WHERE_SQL}
           AND (d.report_nm_clean ILIKE '%%유상증자%%' OR d.report_nm_clean ILIKE '%%전환사채%%'
                OR d.report_nm_clean ILIKE '%%신주인수권부사채%%')
           AND d.report_nm_clean ILIKE '%%결정%%'
         """,
-        {"rd": review_date, "base": base_score, "grade": grade},
+        {"rd": review_date, "base": base_score, "grade": grade, "lookback": FIRST_REVIEW_LOOKBACK_DAYS},
     )
     return cur.rowcount
 
@@ -478,7 +501,7 @@ def rule_d3(cur, review_date: str, base_score: int) -> int:
     """D3: 감사의견 비적정 (best-effort 제목 키워드 매칭 — 공시원문 파싱 전까지는 놓칠
     수 있음, TODO). 긴급확인 7개 조건 중 하나 - 등장 자체로 항상 긴급확인."""
     cur.execute(
-        """
+        f"""
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
              direction, rcept_no, description, compare_basis, basis_label)
@@ -488,11 +511,11 @@ def rule_d3(cur, review_date: str, base_score: int) -> int:
                'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
-        WHERE d.rcept_dt > %(rd)s
+        WHERE {_NEW_EVENT_WHERE_SQL}
           AND (d.report_nm_clean ILIKE '%%부적정%%' OR d.report_nm_clean ILIKE '%%의견거절%%'
                OR d.report_nm_clean ILIKE '%%한정의견%%')
         """,
-        {"rd": review_date, "base": base_score},
+        {"rd": review_date, "base": base_score, "lookback": FIRST_REVIEW_LOOKBACK_DAYS},
     )
     return cur.rowcount
 
@@ -502,7 +525,7 @@ def rule_d4(cur, review_date: str, base_score: int) -> int:
     건이어도 더 이상 합산되지 않는다(v3.3과의 차이 - 공시 1건당 이벤트 1개는 동일)."""
     grade = _grade_from_score(base_score)
     cur.execute(
-        """
+        f"""
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
              direction, rcept_no, description, compare_basis, basis_label)
@@ -511,10 +534,10 @@ def rule_d4(cur, review_date: str, base_score: int) -> int:
                'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
-        WHERE d.rcept_dt > %(rd)s
+        WHERE {_NEW_EVENT_WHERE_SQL}
           AND d.report_nm_clean ILIKE '%%최대주주%%변경%%'
         """,
-        {"rd": review_date, "base": base_score, "grade": grade},
+        {"rd": review_date, "base": base_score, "grade": grade, "lookback": FIRST_REVIEW_LOOKBACK_DAYS},
     )
     return cur.rowcount
 
@@ -544,13 +567,13 @@ def rule_d5(cur, review_date: str, _fallback_base_score: int) -> int:
     """D5: 정정공시. 4단계 유형 분류(classify_d5)로 base_score와 긴급확인 여부를
     결정한다(고정점수 아님 - v4.0 스펙)."""
     cur.execute(
-        """
+        f"""
         SELECT d.rcept_no, d.corp_code, co.corp_name, d.report_nm_clean, d.orig_rcept_no
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
-        WHERE d.rcept_dt > %(rd)s AND d.is_correction
+        WHERE {_NEW_EVENT_WHERE_SQL} AND d.is_correction
         """,
-        {"rd": review_date},
+        {"rd": review_date, "lookback": FIRST_REVIEW_LOOKBACK_DAYS},
     )
     rows = cur.fetchall()
     n = 0
@@ -599,9 +622,10 @@ def _rule_d6(disc_type: str, direction: str):
                    'NEW_EVENT', '마지막 검토 이후 신규'
             FROM core.disclosures d
             JOIN core.companies co USING (corp_code)
-            WHERE d.rcept_dt > %(rd)s AND ({where_sql})
+            WHERE {_NEW_EVENT_WHERE_SQL} AND ({where_sql})
             """,
-            {"rd": review_date, "base": base_score, "grade": grade, "rid": disc_type, "dir": direction},
+            {"rd": review_date, "base": base_score, "grade": grade, "rid": disc_type, "dir": direction,
+             "lookback": FIRST_REVIEW_LOOKBACK_DAYS},
         )
         return cur.rowcount
 
@@ -618,7 +642,7 @@ def rule_d7(cur, review_date: str, base_score: int) -> int:
     """D7(신설): 관리종목 지정·상장적격성 실질심사·상장폐지. 긴급확인 7개 조건 중
     하나 - 등장 자체로 항상 긴급확인."""
     cur.execute(
-        """
+        f"""
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
              direction, rcept_no, description, compare_basis, basis_label)
@@ -628,11 +652,11 @@ def rule_d7(cur, review_date: str, base_score: int) -> int:
                'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
-        WHERE d.rcept_dt > %(rd)s
+        WHERE {_NEW_EVENT_WHERE_SQL}
           AND (d.report_nm_clean ILIKE '%%관리종목%%' OR d.report_nm_clean ILIKE '%%상장적격성%%'
                OR d.report_nm_clean ILIKE '%%상장폐지%%')
         """,
-        {"rd": review_date, "base": base_score},
+        {"rd": review_date, "base": base_score, "lookback": FIRST_REVIEW_LOOKBACK_DAYS},
     )
     return cur.rowcount
 
@@ -640,7 +664,7 @@ def rule_d7(cur, review_date: str, base_score: int) -> int:
 def rule_d8(cur, review_date: str, base_score: int) -> int:
     """D8(신설): 매매거래정지·회생절차개시신청·부도. 긴급확인 7개 조건 중 하나."""
     cur.execute(
-        """
+        f"""
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
              direction, rcept_no, description, compare_basis, basis_label)
@@ -650,11 +674,11 @@ def rule_d8(cur, review_date: str, base_score: int) -> int:
                'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
-        WHERE d.rcept_dt > %(rd)s
+        WHERE {_NEW_EVENT_WHERE_SQL}
           AND (d.report_nm_clean ILIKE '%%거래정지%%' OR d.report_nm_clean ILIKE '%%회생절차%%'
                OR d.report_nm_clean ILIKE '%%부도%%')
         """,
-        {"rd": review_date, "base": base_score},
+        {"rd": review_date, "base": base_score, "lookback": FIRST_REVIEW_LOOKBACK_DAYS},
     )
     return cur.rowcount
 
@@ -664,7 +688,7 @@ def rule_d9(cur, review_date: str, base_score: int) -> int:
     구현과 동일하게 긴급확인 고정이 아니라 base_score(v4.1: 8, 등급 "높음")로 둔다."""
     grade = _grade_from_score(base_score)
     cur.execute(
-        """
+        f"""
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
              direction, rcept_no, description, compare_basis, basis_label)
@@ -674,11 +698,11 @@ def rule_d9(cur, review_date: str, base_score: int) -> int:
                'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
-        WHERE d.rcept_dt > %(rd)s
+        WHERE {_NEW_EVENT_WHERE_SQL}
           AND (d.report_nm_clean ILIKE '%%영업정지%%' OR d.report_nm_clean ILIKE '%%영업중단%%'
                OR d.report_nm_clean ILIKE '%%핵심사업%%')
         """,
-        {"rd": review_date, "base": base_score, "grade": grade},
+        {"rd": review_date, "base": base_score, "grade": grade, "lookback": FIRST_REVIEW_LOOKBACK_DAYS},
     )
     return cur.rowcount
 
@@ -688,7 +712,7 @@ def rule_d10(cur, review_date: str, base_score: int) -> int:
     패턴 - 구조화된 보증금액/자기자본 비율 데이터가 없어 바이너리로 둔다."""
     grade = _grade_from_score(base_score)
     cur.execute(
-        """
+        f"""
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
              direction, rcept_no, description, compare_basis, basis_label)
@@ -698,10 +722,10 @@ def rule_d10(cur, review_date: str, base_score: int) -> int:
                'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
-        WHERE d.rcept_dt > %(rd)s
+        WHERE {_NEW_EVENT_WHERE_SQL}
           AND (d.report_nm_clean ILIKE '%%채무보증%%' OR d.report_nm_clean ILIKE '%%담보제공%%')
         """,
-        {"rd": review_date, "base": base_score, "grade": grade},
+        {"rd": review_date, "base": base_score, "grade": grade, "lookback": FIRST_REVIEW_LOOKBACK_DAYS},
     )
     return cur.rowcount
 
@@ -903,6 +927,8 @@ def aggregate_company_priority(cur, review_date: str) -> None:
 
 
 def aggregate_kpi(cur, review_date: str) -> None:
+    # v4.3-1: new_disclosures/corrections도 D-rule과 같은 "기업별 직전 검토일" 기준으로
+    # 맞춘다 - 전역 review_date와만 비교하면 화면 KPI 숫자와 실제 rule 결과가 따로 논다.
     cur.execute(
         """
         INSERT INTO mart.kpi_daily
@@ -913,14 +939,19 @@ def aggregate_kpi(cur, review_date: str) -> None:
             (SELECT count(*) FROM mart.company_priority WHERE review_date = %(rd)s),
             (SELECT count(*) FROM mart.company_priority WHERE review_date = %(rd)s
                 AND priority_level IN ('emergency', 'high')),
-            (SELECT count(*) FROM core.disclosures WHERE rcept_dt > %(rd)s),
-            (SELECT count(*) FROM core.disclosures WHERE rcept_dt > %(rd)s AND is_correction),
+            (SELECT count(*) FROM core.disclosures d
+                WHERE d.rcept_dt > COALESCE(core.last_review_before(d.corp_code, %(rd)s::date),
+                                             %(rd)s::date - make_interval(days => %(lookback)s))),
+            (SELECT count(*) FROM core.disclosures d
+                WHERE d.rcept_dt > COALESCE(core.last_review_before(d.corp_code, %(rd)s::date),
+                                             %(rd)s::date - make_interval(days => %(lookback)s))
+                  AND d.is_correction),
             (SELECT EXISTS(SELECT 1 FROM mart.rate_context
                 WHERE review_date = %(rd)s AND corp_code <> '__ALL__')),
             (SELECT count(*) FROM mart.rate_context WHERE review_date = %(rd)s AND corp_code <> '__ALL__')
         )
         """,
-        {"rd": review_date},
+        {"rd": review_date, "lookback": FIRST_REVIEW_LOOKBACK_DAYS},
     )
     print("mart.kpi_daily: 1건 집계")
 
