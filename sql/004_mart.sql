@@ -44,6 +44,18 @@ ALTER TABLE mart.change_events ADD CONSTRAINT change_events_grade_check
 -- 버전이 바뀌면 이 DEFAULT 값도 같이 올릴 것.
 ALTER TABLE mart.change_events ADD COLUMN IF NOT EXISTS rule_version text NOT NULL DEFAULT '4.1';
 
+-- v4.1 2단계: 재무(F-rule)·공시(D-rule)가 전부 "이전->최신"으로만 보여서 YoY/정정전후/
+-- 신규이벤트가 서로 다른 비교 기준이라는 게 화면에서 안 드러난다는 팀 리뷰 반영.
+-- compare_basis: F1~F8·D1(재무 데이터 기반)=YOY, D2~D4/D6A~D10=NEW_EVENT, D5=CORRECTION.
+-- event_group_id: 같은 사건을 서로 다른 룰이 동시에 잡은 경우 묶는 키(현재는 D5만 자기
+-- rcept_no를 씀 - F-rule과 D5를 연결할 재무제표<->공시 매핑이 DB에 없어 실질적으로는
+-- 그룹이 거의 안 생김, 나중에 그 연결이 생기면 바로 쓸 수 있게 인프라만 둠).
+ALTER TABLE mart.change_events ADD COLUMN IF NOT EXISTS compare_basis text
+    CHECK (compare_basis IN ('YOY', 'CORRECTION', 'NEW_EVENT', 'MACRO'));
+ALTER TABLE mart.change_events ADD COLUMN IF NOT EXISTS basis_label text;
+ALTER TABLE mart.change_events ADD COLUMN IF NOT EXISTS event_group_id text;
+ALTER TABLE mart.change_events ADD COLUMN IF NOT EXISTS is_grouped_duplicate boolean NOT NULL DEFAULT false;
+
 -- 기업별 재검토 우선순위 요약 (대시보드 상단 랭킹용)
 CREATE TABLE IF NOT EXISTS mart.company_priority (
     corp_code               text NOT NULL,
@@ -76,6 +88,14 @@ ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS top_event_id bigint;
 ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS additional_important_events integer NOT NULL DEFAULT 0;
 ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS reason_text text;
 ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS rule_version text NOT NULL DEFAULT '4.1';
+
+-- v4.1 2단계: 대표 사건(reason_text) 외에 "그다음으로 중요한 사건"도 보여주고, YoY/정정/
+-- 신규 이벤트가 각각 몇 건인지 구분해서 보여주기 위한 컬럼. 집계 로직은
+-- run_rules.aggregate_company_priority 참고.
+ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS reason_text_2 text;
+ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS yoy_event_count integer NOT NULL DEFAULT 0;
+ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS correction_event_count integer NOT NULL DEFAULT 0;
+ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS new_event_count integer NOT NULL DEFAULT 0;
 
 -- 해설문장(접수번호·문장번호), 근거 원문 섹션 필수
 CREATE TABLE IF NOT EXISTS mart.explanation_sentences (

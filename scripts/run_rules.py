@@ -27,12 +27,19 @@ rule_engine_v40.py의 THRESHOLDS와 그대로 맞췄다(두 엔진 간 숫자 �
 단순화 지점(src/rules와 다른 부분, README_rule_engine.md에도 명시):
 - "판정불가"(NOT_EVALUATED)/"적용제외"(EXCLUDED) 상태값 테이블은 SQL엔진에 안 만든다
   (F8 발생 시 F4는 그냥 이벤트를 안 만드는 것으로 암묵 처리).
-- event_group_id 기반 중복이벤트 묶기는 SQL엔진에 미반영(disclosures 적재 단계에
-  연결 컬럼이 없음).
+- event_group_id 기반 중복이벤트 묶기는 인프라(컬럼+집계 로직)는 있지만(v4.1 2단계),
+  D5만 자기 rcept_no를 그룹으로 쓰고 다른 룰과 안 겹쳐서 실질적으로는 거의 항상
+  그룹이 1개짜리라 동작이 안 보인다 - 재무제표가 어느 공시(rcept_no)에서 나왔는지
+  연결하는 컬럼이 DB에 없어 F-rule과 D5를 그룹으로 못 묶기 때문(팀과 합의된 단순화).
 - D1/D2/D6A~D6D의 강도 밴드(구조화된 금액/자산 비율 필요)는 그 구조화 데이터가
   SQL엔진에 적재돼 있지 않아 바이너리(밴드 없음)로 유지 - 기존 엔진과 동일한 수준.
 - F5의 강도 밴드는 TOTAL_ASSETS가 적재돼 있지 않아 b_val(차입금증가/총자산) 대신
   증가율(rate) 자체로 밴드를 매긴다(기존 SQL엔진의 F5 로직 그대로 유지).
+
+v4.1 2단계(compare_basis 분리): 모든 이벤트에 compare_basis('YOY'/'CORRECTION'/
+'NEW_EVENT')와 사람이 읽는 basis_label을 달았다. F1~F8·D1(재무 데이터 기반)은 YOY,
+D5는 CORRECTION, 나머지 D-rule은 NEW_EVENT. MACRO는 아직 아무 룰도 안 씀(3단계
+ECOS 작업에서 CTX1이 쓸 예정).
 
 Usage:
     python scripts/run_rules.py --review-date 2026-08-31
@@ -116,14 +123,16 @@ def rule_f1(cur, review_date: str, base_score: int) -> int:
         )
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, account_std_name, old_value, new_value, change_rate, description)
+             direction, account_std_name, old_value, new_value, change_rate, description,
+             compare_basis, basis_label)
         SELECT corp_code, corp_name, %(rd)s, 'financial', 'F1',
                {_GRADE_CASE_SQL.format(score='score')}, score, false, direction,
                account_std_name, frmtrm_amount, thstrm_amount, b_val,
-               format('영업이익 %%s (전년 동기 %%s원 -> 최신 %%s원, %%s년)',
+               format('[전년 동기] 영업이익 %%s (전년 동기 %%s원 -> 최신 %%s원, %%s년)',
                       CASE WHEN direction = 'negative' THEN '흑자->적자 전환' ELSE '적자->흑자 전환' END,
                       to_char(frmtrm_amount, 'FM999,999,999,999,999,999'),
-                      to_char(thstrm_amount, 'FM999,999,999,999,999,999'), bsns_year)
+                      to_char(thstrm_amount, 'FM999,999,999,999,999,999'), bsns_year),
+               'YOY', '전년 동기 대비'
         FROM scored
         """,
         {"rd": review_date, "base": base_score},
@@ -158,14 +167,16 @@ def rule_f2(cur, review_date: str, base_score: int) -> int:
         )
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, account_std_name, old_value, new_value, change_rate, description)
+             direction, account_std_name, old_value, new_value, change_rate, description,
+             compare_basis, basis_label)
         SELECT corp_code, corp_name, %(rd)s, 'financial', 'F2',
                {_GRADE_CASE_SQL.format(score='score')}, score, false, direction,
                account_std_name, frmtrm_amount, thstrm_amount, b_val,
-               format('영업활동현금흐름 %%s (전년 동기 %%s원 -> 최신 %%s원, %%s년)',
+               format('[전년 동기] 영업활동현금흐름 %%s (전년 동기 %%s원 -> 최신 %%s원, %%s년)',
                       CASE WHEN direction = 'negative' THEN '양수->음수 전환' ELSE '음수->양수 전환' END,
                       to_char(frmtrm_amount, 'FM999,999,999,999,999,999'),
-                      to_char(thstrm_amount, 'FM999,999,999,999,999,999'), bsns_year)
+                      to_char(thstrm_amount, 'FM999,999,999,999,999,999'), bsns_year),
+               'YOY', '전년 동기 대비'
         FROM scored
         """,
         {"rd": review_date, "base": base_score},
@@ -211,14 +222,16 @@ def rule_f3(cur, review_date: str, base_score: int) -> int:
         )
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, account_std_name, old_value, new_value, change_rate, description)
+             direction, account_std_name, old_value, new_value, change_rate, description,
+             compare_basis, basis_label)
         SELECT corp_code, corp_name, %(rd)s, 'financial', 'F3',
                {_GRADE_CASE_SQL.format(score='score')}, score, false, direction,
                account_std_name, frmtrm_amount, thstrm_amount, rate,
-               format('매출액 전년 동기 대비 %%s%%%% %%s (%%s원 -> %%s원, %%s년)',
+               format('[전년 동기] 매출액 전년 동기 대비 %%s%%%% %%s (%%s원 -> %%s원, %%s년)',
                       round(rate, 1), CASE WHEN rate > 0 THEN '증가' ELSE '감소' END,
                       to_char(frmtrm_amount, 'FM999,999,999,999,999,999'),
-                      to_char(thstrm_amount, 'FM999,999,999,999,999,999'), bsns_year)
+                      to_char(thstrm_amount, 'FM999,999,999,999,999,999'), bsns_year),
+               'YOY', '전년 동기 대비'
         FROM scored
         """,
         {"rd": review_date, "base": base_score},
@@ -257,11 +270,13 @@ def rule_f4(cur, review_date: str, base_score: int) -> int:
         )
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, account_std_name, old_value, new_value, change_rate, description)
+             direction, account_std_name, old_value, new_value, change_rate, description,
+             compare_basis, basis_label)
         SELECT s.corp_code, co.corp_name, %(rd)s, 'financial', 'F4',
                {_GRADE_CASE_SQL.format(score='s.score')}, s.score, false, 'negative',
                '부채비율', s.ratio_prev, s.ratio_cur, s.delta,
-               format('부채비율 %%s%%%% -> %%s%%%% (%%s년)', s.ratio_prev, s.ratio_cur, s.bsns_year)
+               format('[전년 동기] 부채비율 %%s%%%% -> %%s%%%% (%%s년)', s.ratio_prev, s.ratio_cur, s.bsns_year),
+               'YOY', '전년 동기 대비'
         FROM scored s
         JOIN core.companies co ON co.corp_code = s.corp_code
         WHERE NOT EXISTS (
@@ -293,14 +308,16 @@ def rule_f5(cur, review_date: str, base_score: int) -> int:
         )
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, account_std_name, old_value, new_value, change_rate, description)
+             direction, account_std_name, old_value, new_value, change_rate, description,
+             compare_basis, basis_label)
         SELECT corp_code, corp_name, %(rd)s, 'financial', 'F5',
                {_GRADE_CASE_SQL.format(score='score')}, score, false, 'negative',
                account_std_name, frmtrm_amount, thstrm_amount, rate * 100,
-               format('차입금 %%s원 -> %%s원 (%%s%%%% 증가, %%s년)',
+               format('[전년 동기] 차입금 %%s원 -> %%s원 (%%s%%%% 증가, %%s년)',
                       to_char(frmtrm_amount, 'FM999,999,999,999,999,999'),
                       to_char(thstrm_amount, 'FM999,999,999,999,999,999'),
-                      round(100 * rate, 1), bsns_year)
+                      round(100 * rate, 1), bsns_year),
+               'YOY', '전년 동기 대비'
         FROM scored
         """,
         {"rd": review_date, "base": base_score},
@@ -328,12 +345,14 @@ def rule_f6(cur, review_date: str, base_score: int) -> int:
         )
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, account_std_name, old_value, new_value, change_rate, description)
+             direction, account_std_name, old_value, new_value, change_rate, description,
+             compare_basis, basis_label)
         SELECT corp_code, corp_name, %(rd)s, 'financial', 'F6',
                {_GRADE_CASE_SQL.format(score='score')}, score, false, direction,
                account_std_name, frmtrm_amount, thstrm_amount, rate,
-               format('흑자 유지 중 영업이익 %%s%%%% %%s (%%s년)',
-                      round(rate, 1), CASE WHEN rate > 0 THEN '증가' ELSE '감소' END, bsns_year)
+               format('[전년 동기] 흑자 유지 중 영업이익 %%s%%%% %%s (%%s년)',
+                      round(rate, 1), CASE WHEN rate > 0 THEN '증가' ELSE '감소' END, bsns_year),
+               'YOY', '전년 동기 대비'
         FROM scored
         """,
         {"rd": review_date, "base": base_score},
@@ -361,12 +380,14 @@ def rule_f7(cur, review_date: str, base_score: int) -> int:
         )
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, account_std_name, old_value, new_value, change_rate, description)
+             direction, account_std_name, old_value, new_value, change_rate, description,
+             compare_basis, basis_label)
         SELECT corp_code, corp_name, %(rd)s, 'financial', 'F7',
                {_GRADE_CASE_SQL.format(score='score')}, score, false, direction,
                account_std_name, frmtrm_amount, thstrm_amount, rate,
-               format('적자 유지 중 영업손실 %%s (%%s%%%%, %%s년)',
-                      CASE WHEN rate > 0 THEN '축소' ELSE '확대' END, round(abs(rate), 1), bsns_year)
+               format('[전년 동기] 적자 유지 중 영업손실 %%s (%%s%%%%, %%s년)',
+                      CASE WHEN rate > 0 THEN '축소' ELSE '확대' END, round(abs(rate), 1), bsns_year),
+               'YOY', '전년 동기 대비'
         FROM scored
         """,
         {"rd": review_date, "base": base_score},
@@ -381,12 +402,14 @@ def rule_f8(cur, review_date: str, base_score: int) -> int:
         """
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, account_std_name, old_value, new_value, description)
+             direction, account_std_name, old_value, new_value, description,
+             compare_basis, basis_label)
         SELECT f.corp_code, co.corp_name, %(rd)s, 'financial', 'F8', '긴급확인', %(base)s, true,
                'negative', f.account_std_name, f.frmtrm_amount, f.thstrm_amount,
-               format('자기자본 상태 전환(양수 -> 0 이하): 전년 동기 %%s원 -> 최신 %%s원 (%%s년)',
+               format('[전년 동기] 자기자본 상태 전환(양수 -> 0 이하): 전년 동기 %%s원 -> 최신 %%s원 (%%s년)',
                       to_char(f.frmtrm_amount, 'FM999,999,999,999,999,999'),
-                      to_char(f.thstrm_amount, 'FM999,999,999,999,999,999'), f.bsns_year)
+                      to_char(f.thstrm_amount, 'FM999,999,999,999,999,999'), f.bsns_year),
+               'YOY', '전년 동기 대비'
         FROM core.latest_financials f
         JOIN core.companies co USING (corp_code)
         WHERE f.account_std_code = 'TOTAL_EQUITY' AND f.frmtrm_amount > 0 AND f.thstrm_amount <= 0
@@ -408,12 +431,14 @@ def rule_d1(cur, review_date: str, base_score: int) -> int:
         """
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, account_std_name, old_value, new_value, description)
+             direction, account_std_name, old_value, new_value, description,
+             compare_basis, basis_label)
         SELECT f.corp_code, co.corp_name, %(rd)s, 'disclosure', 'D1', %(grade)s, %(base)s, false,
                'negative', f.account_std_name, f.frmtrm_amount, f.thstrm_amount,
-               format('단기차입금 %%s원 -> %%s원 (%%s년)',
+               format('[전년 동기] 단기차입금 %%s원 -> %%s원 (%%s년)',
                       to_char(f.frmtrm_amount, 'FM999,999,999,999,999,999'),
-                      to_char(f.thstrm_amount, 'FM999,999,999,999,999,999'), f.bsns_year)
+                      to_char(f.thstrm_amount, 'FM999,999,999,999,999,999'), f.bsns_year),
+               'YOY', '전년 동기 대비'
         FROM core.latest_financials f
         JOIN core.companies co USING (corp_code)
         WHERE f.account_std_code = 'ST_BORROWINGS'
@@ -433,9 +458,10 @@ def rule_d2(cur, review_date: str, base_score: int) -> int:
         """
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, rcept_no, description)
+             direction, rcept_no, description, compare_basis, basis_label)
         SELECT d.corp_code, co.corp_name, %(rd)s, 'disclosure', 'D2', %(grade)s, %(base)s, false,
-               'negative', d.rcept_no, format('자금조달 결정 공시: %%s', d.report_nm_clean)
+               'negative', d.rcept_no, format('[신규 공시] 자금조달 결정 공시: %%s', d.report_nm_clean),
+               'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
         WHERE d.rcept_dt > %(rd)s
@@ -455,10 +481,11 @@ def rule_d3(cur, review_date: str, base_score: int) -> int:
         """
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, rcept_no, description)
+             direction, rcept_no, description, compare_basis, basis_label)
         SELECT d.corp_code, co.corp_name, %(rd)s, 'disclosure', 'D3', '긴급확인', %(base)s, true,
                'negative', d.rcept_no,
-               format('감사의견 비적정 의심 공시(제목 매칭, 원문 확인 필요): %%s', d.report_nm_clean)
+               format('[신규 공시] 감사의견 비적정 의심 공시(제목 매칭, 원문 확인 필요): %%s', d.report_nm_clean),
+               'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
         WHERE d.rcept_dt > %(rd)s
@@ -478,9 +505,10 @@ def rule_d4(cur, review_date: str, base_score: int) -> int:
         """
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, rcept_no, description)
+             direction, rcept_no, description, compare_basis, basis_label)
         SELECT d.corp_code, co.corp_name, %(rd)s, 'disclosure', 'D4', %(grade)s, %(base)s, false,
-               'neutral', d.rcept_no, format('최대주주 변경 공시: %%s', d.report_nm_clean)
+               'neutral', d.rcept_no, format('[신규 공시] 최대주주 변경 공시: %%s', d.report_nm_clean),
+               'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
         WHERE d.rcept_dt > %(rd)s
@@ -533,15 +561,16 @@ def rule_d5(cur, review_date: str, _fallback_base_score: int) -> int:
         direction = "neutral" if ctype in ("TYPO", "MINOR_CHANGE") else "negative"
         orig_note = f" (원공시 {orig_rcept_no})" if orig_rcept_no else " (정정 전 공시 없음)"
         emergency_note = " - 손익/자기자본 상태 변경 동반(근사치 판정)" if is_emergency else ""
-        description = f"정정공시: {report_nm} [{D5_LABEL[ctype]}]{emergency_note}{orig_note}"
+        description = f"[정정] 정정공시: {report_nm} [{D5_LABEL[ctype]}]{emergency_note}{orig_note}"
         cur.execute(
             """
             INSERT INTO mart.change_events
                 (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-                 direction, rcept_no, description)
-            VALUES (%s, %s, %s, 'disclosure', 'D5', %s, %s, %s, %s, %s, %s)
+                 direction, rcept_no, description, compare_basis, basis_label, event_group_id)
+            VALUES (%s, %s, %s, 'disclosure', 'D5', %s, %s, %s, %s, %s, %s,
+                    'CORRECTION', '정정 전 -> 정정 후', %s)
             """,
-            (corp_code, corp_name, review_date, grade, score, is_emergency, direction, rcept_no, description),
+            (corp_code, corp_name, review_date, grade, score, is_emergency, direction, rcept_no, description, rcept_no),
         )
         n += 1
     return n
@@ -564,9 +593,10 @@ def _rule_d6(disc_type: str, direction: str):
             f"""
             INSERT INTO mart.change_events
                 (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-                 direction, rcept_no, description)
+                 direction, rcept_no, description, compare_basis, basis_label)
             SELECT d.corp_code, co.corp_name, %(rd)s, 'disclosure', %(rid)s, %(grade)s, %(base)s, false,
-                   %(dir)s, d.rcept_no, format('{label} 공시: %%s', d.report_nm_clean)
+                   %(dir)s, d.rcept_no, format('[신규 공시] {label} 공시: %%s', d.report_nm_clean),
+                   'NEW_EVENT', '마지막 검토 이후 신규'
             FROM core.disclosures d
             JOIN core.companies co USING (corp_code)
             WHERE d.rcept_dt > %(rd)s AND ({where_sql})
@@ -591,10 +621,11 @@ def rule_d7(cur, review_date: str, base_score: int) -> int:
         """
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, rcept_no, description)
+             direction, rcept_no, description, compare_basis, basis_label)
         SELECT d.corp_code, co.corp_name, %(rd)s, 'disclosure', 'D7', '긴급확인', %(base)s, true,
                'negative', d.rcept_no,
-               format('관리종목 지정·상장적격성 실질심사·상장폐지 관련 공시: %%s', d.report_nm_clean)
+               format('[신규 공시] 관리종목 지정·상장적격성 실질심사·상장폐지 관련 공시: %%s', d.report_nm_clean),
+               'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
         WHERE d.rcept_dt > %(rd)s
@@ -612,10 +643,11 @@ def rule_d8(cur, review_date: str, base_score: int) -> int:
         """
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, rcept_no, description)
+             direction, rcept_no, description, compare_basis, basis_label)
         SELECT d.corp_code, co.corp_name, %(rd)s, 'disclosure', 'D8', '긴급확인', %(base)s, true,
                'negative', d.rcept_no,
-               format('매매거래정지·회생절차개시신청·부도 관련 공시: %%s', d.report_nm_clean)
+               format('[신규 공시] 매매거래정지·회생절차개시신청·부도 관련 공시: %%s', d.report_nm_clean),
+               'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
         WHERE d.rcept_dt > %(rd)s
@@ -635,10 +667,11 @@ def rule_d9(cur, review_date: str, base_score: int) -> int:
         """
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, rcept_no, description)
+             direction, rcept_no, description, compare_basis, basis_label)
         SELECT d.corp_code, co.corp_name, %(rd)s, 'disclosure', 'D9', %(grade)s, %(base)s, false,
                'negative', d.rcept_no,
-               format('중대한 영업정지·핵심사업중단 공시: %%s', d.report_nm_clean)
+               format('[신규 공시] 중대한 영업정지·핵심사업중단 공시: %%s', d.report_nm_clean),
+               'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
         WHERE d.rcept_dt > %(rd)s
@@ -658,10 +691,11 @@ def rule_d10(cur, review_date: str, base_score: int) -> int:
         """
         INSERT INTO mart.change_events
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
-             direction, rcept_no, description)
+             direction, rcept_no, description, compare_basis, basis_label)
         SELECT d.corp_code, co.corp_name, %(rd)s, 'disclosure', 'D10', %(grade)s, %(base)s, false,
                'negative', d.rcept_no,
-               format('채무보증·담보제공 결정 공시: %%s', d.report_nm_clean)
+               format('[신규 공시] 채무보증·담보제공 결정 공시: %%s', d.report_nm_clean),
+               'NEW_EVENT', '마지막 검토 이후 신규'
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
         WHERE d.rcept_dt > %(rd)s
@@ -721,7 +755,27 @@ def aggregate_company_priority(cur, review_date: str) -> None:
     (스펙 8번 순서 그대로 - ①is_emergency ②grade ③score ④raw_change(abs) ⑤rule_sort).
     additional_important_events는 대표사건을 뺀 나머지 중 grade가 '높음'/'중간'인
     이벤트 개수(등급 산정에는 안 씀 - 정보성, "점수를 더해서 등급을 안 만든다"는
-    원칙 유지)."""
+    원칙 유지).
+
+    v4.1 2단계: 대표사건 선출 전에 event_group_id 그룹 내 최고점수만 남기고 나머지는
+    is_grouped_duplicate=true로 표시(대표 후보에서 제외, change_count 등 집계에는 그대로
+    포함 - "합산은 안 하지만 몇 건 있었는지"는 정보성이라 다름). 현재는 D5만 자기
+    rcept_no를 event_group_id로 쓰고 다른 룰과 안 겹쳐서 실질적으로는 그룹이 거의 안
+    생긴다(재무제표<->정정공시 연결이 DB에 없어서, README 참고) - 나중에 그 연결이
+    생기면 바로 동작하게 인프라만 먼저 둔다.
+    reason_text_2/*_event_count도 여기서 같이 계산한다."""
+    cur.execute(
+        """
+        UPDATE mart.change_events ce
+        SET is_grouped_duplicate = true
+        WHERE ce.review_date = %(rd)s AND ce.event_group_id IS NOT NULL
+          AND ce.score < (
+              SELECT MAX(ce2.score) FROM mart.change_events ce2
+              WHERE ce2.review_date = ce.review_date AND ce2.event_group_id = ce.event_group_id
+          )
+        """,
+        {"rd": review_date},
+    )
     cur.execute(
         """
         WITH scored AS (
@@ -735,13 +789,16 @@ def aggregate_company_priority(cur, review_date: str) -> None:
                                 CASE WHEN ce.rule_id LIKE 'F%%' THEN 0 ELSE 1 END, ce.rule_id ASC
                    ) AS rn
             FROM mart.change_events ce
-            WHERE ce.review_date = %(rd)s
+            WHERE ce.review_date = %(rd)s AND NOT ce.is_grouped_duplicate
         ),
         counts AS (
             SELECT corp_code, corp_name,
                    count(*) AS change_count,
                    count(*) FILTER (WHERE change_type = 'financial') AS financial_rule_count,
-                   count(*) FILTER (WHERE change_type = 'disclosure') AS disclosure_rule_count
+                   count(*) FILTER (WHERE change_type = 'disclosure') AS disclosure_rule_count,
+                   count(*) FILTER (WHERE compare_basis = 'YOY') AS yoy_event_count,
+                   count(*) FILTER (WHERE compare_basis = 'CORRECTION') AS correction_event_count,
+                   count(*) FILTER (WHERE compare_basis = 'NEW_EVENT') AS new_event_count
             FROM mart.change_events WHERE review_date = %(rd)s
             GROUP BY corp_code, corp_name
         ),
@@ -749,21 +806,27 @@ def aggregate_company_priority(cur, review_date: str) -> None:
             SELECT corp_code, count(*) AS n
             FROM scored WHERE rn > 1 AND grade IN ('높음', '중간')
             GROUP BY corp_code
+        ),
+        second AS (
+            SELECT corp_code, description FROM scored WHERE rn = 2
         )
         INSERT INTO mart.company_priority
             (corp_code, corp_name, review_date, priority_level, priority_score, is_emergency,
-             top_rule_id, top_event_id, additional_important_events, reason_text,
-             change_count, financial_rule_count, disclosure_rule_count)
+             top_rule_id, top_event_id, additional_important_events, reason_text, reason_text_2,
+             change_count, financial_rule_count, disclosure_rule_count,
+             yoy_event_count, correction_event_count, new_event_count)
         SELECT
             c.corp_code, c.corp_name, %(rd)s,
             CASE WHEN s.is_emergency THEN 'emergency'
                  WHEN s.grade = '높음' THEN 'high' WHEN s.grade = '중간' THEN 'mid'
                  ELSE 'low' END,
-            s.score, s.is_emergency, s.rule_id, s.event_id, COALESCE(a.n, 0), s.description,
-            c.change_count, c.financial_rule_count, c.disclosure_rule_count
+            s.score, s.is_emergency, s.rule_id, s.event_id, COALESCE(a.n, 0), s.description, d2.description,
+            c.change_count, c.financial_rule_count, c.disclosure_rule_count,
+            c.yoy_event_count, c.correction_event_count, c.new_event_count
         FROM counts c
         JOIN scored s ON s.corp_code = c.corp_code AND s.rn = 1
         LEFT JOIN additional a ON a.corp_code = c.corp_code
+        LEFT JOIN second d2 ON d2.corp_code = c.corp_code
         """,
         {"rd": review_date},
     )
