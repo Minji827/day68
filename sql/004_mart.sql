@@ -39,6 +39,11 @@ ALTER TABLE mart.change_events DROP CONSTRAINT IF EXISTS change_events_grade_che
 ALTER TABLE mart.change_events ADD CONSTRAINT change_events_grade_check
     CHECK (grade IN ('긴급확인', '높음', '중간', '낮음'));
 
+-- v4.1: 어느 룰 버전으로 계산된 행인지 추적(점수표가 또 바뀔 때 과거 행과 구분 가능하게).
+-- run_rules.py가 매번 새로 INSERT하므로 DEFAULT만으로 모든 신규 행에 자동 기록됨 -
+-- 버전이 바뀌면 이 DEFAULT 값도 같이 올릴 것.
+ALTER TABLE mart.change_events ADD COLUMN IF NOT EXISTS rule_version text NOT NULL DEFAULT '4.1';
+
 -- 기업별 재검토 우선순위 요약 (대시보드 상단 랭킹용)
 CREATE TABLE IF NOT EXISTS mart.company_priority (
     corp_code               text NOT NULL,
@@ -70,6 +75,7 @@ ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS top_rule_id text;
 ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS top_event_id bigint;
 ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS additional_important_events integer NOT NULL DEFAULT 0;
 ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS reason_text text;
+ALTER TABLE mart.company_priority ADD COLUMN IF NOT EXISTS rule_version text NOT NULL DEFAULT '4.1';
 
 -- 해설문장(접수번호·문장번호), 근거 원문 섹션 필수
 CREATE TABLE IF NOT EXISTS mart.explanation_sentences (

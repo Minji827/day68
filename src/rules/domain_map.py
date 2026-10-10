@@ -47,11 +47,12 @@ RULE_DOMAIN_V40: dict[str, str] = {
     "D7": "상장",
     "D8": "상장",
     "D9": "사업",
+    "D10": "레버리지",  # 신설(v4.1): 채무보증·담보제공
 }
 
 ALL_RULE_IDS_V40: tuple[str, ...] = (
     "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8",
-    "D1", "D2", "D3", "D4", "D5", "D6A", "D6B", "D6C", "D6D", "D7", "D8", "D9",
+    "D1", "D2", "D3", "D4", "D5", "D6A", "D6B", "D6C", "D6D", "D7", "D8", "D9", "D10",
 )
 F_RULE_IDS_V40: tuple[str, ...] = ("F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8")
-D_RULE_IDS_V40: tuple[str, ...] = ("D1", "D2", "D3", "D4", "D5", "D6A", "D6B", "D6C", "D6D", "D7", "D8", "D9")
+D_RULE_IDS_V40: tuple[str, ...] = ("D1", "D2", "D3", "D4", "D5", "D6A", "D6B", "D6C", "D6D", "D7", "D8", "D9", "D10")

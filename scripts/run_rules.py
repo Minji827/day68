@@ -53,7 +53,8 @@ D5_LOW_KEYWORDS = ("단순정정", "단순", "오기재", "오타", "경미한")
 D5_CORE_REPORT_KEYWORDS = ("사업보고서", "반기보고서", "분기보고서")
 
 # src/rules/rule_engine_v40.py의 THRESHOLDS["D5_*"]["BASE"]와 동일.
-D5_BASE = {"TYPO": 1, "MINOR_CHANGE": 3, "MAJOR_AMOUNT": 6, "CORE_FINANCIAL": 9}
+# v4.1: MAJOR_AMOUNT 6->7 상향(핵심 보고서 정정은 "중간" 상위로, 팀 리뷰).
+D5_BASE = {"TYPO": 1, "MINOR_CHANGE": 3, "MAJOR_AMOUNT": 7, "CORE_FINANCIAL": 9}
 D5_LABEL = {
     "TYPO": "오탈자 수준 정정", "MINOR_CHANGE": "일반 조건 변경 정정",
     "MAJOR_AMOUNT": "중요 금액 변경 정정", "CORE_FINANCIAL": "핵심 재무수치 정정",
@@ -424,7 +425,9 @@ def rule_d1(cur, review_date: str, base_score: int) -> int:
 
 
 def rule_d2(cur, review_date: str, base_score: int) -> int:
-    """D2: 유상증자 결정 공시 (마지막 검토일 이후). 바이너리(밴드 없음)."""
+    """D2: 자금조달 결정 공시 (마지막 검토일 이후). 바이너리(밴드 없음).
+    v4.1: 유상증자뿐 아니라 전환사채·신주인수권부사채 발행결정도 같은 자금조달 압박
+    신호로 보고 조건 확대(팀 리뷰)."""
     grade = _grade_from_score(base_score)
     cur.execute(
         """
@@ -432,11 +435,13 @@ def rule_d2(cur, review_date: str, base_score: int) -> int:
             (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
              direction, rcept_no, description)
         SELECT d.corp_code, co.corp_name, %(rd)s, 'disclosure', 'D2', %(grade)s, %(base)s, false,
-               'negative', d.rcept_no, format('유상증자 결정 공시: %%s', d.report_nm_clean)
+               'negative', d.rcept_no, format('자금조달 결정 공시: %%s', d.report_nm_clean)
         FROM core.disclosures d
         JOIN core.companies co USING (corp_code)
         WHERE d.rcept_dt > %(rd)s
-          AND d.report_nm_clean ILIKE '%%유상증자%%' AND d.report_nm_clean ILIKE '%%결정%%'
+          AND (d.report_nm_clean ILIKE '%%유상증자%%' OR d.report_nm_clean ILIKE '%%전환사채%%'
+               OR d.report_nm_clean ILIKE '%%신주인수권부사채%%')
+          AND d.report_nm_clean ILIKE '%%결정%%'
         """,
         {"rd": review_date, "base": base_score, "grade": grade},
     )
@@ -624,7 +629,7 @@ def rule_d8(cur, review_date: str, base_score: int) -> int:
 
 def rule_d9(cur, review_date: str, base_score: int) -> int:
     """D9(신설): 중대한 영업정지·핵심사업중단. src/rules/rule_engine_v40.py의 실제
-    구현과 동일하게 긴급확인 고정이 아니라 base_score=7(등급 "중간")로 둔다."""
+    구현과 동일하게 긴급확인 고정이 아니라 base_score(v4.1: 8, 등급 "높음")로 둔다."""
     grade = _grade_from_score(base_score)
     cur.execute(
         """
@@ -639,6 +644,28 @@ def rule_d9(cur, review_date: str, base_score: int) -> int:
         WHERE d.rcept_dt > %(rd)s
           AND (d.report_nm_clean ILIKE '%%영업정지%%' OR d.report_nm_clean ILIKE '%%영업중단%%'
                OR d.report_nm_clean ILIKE '%%핵심사업%%')
+        """,
+        {"rd": review_date, "base": base_score, "grade": grade},
+    )
+    return cur.rowcount
+
+
+def rule_d10(cur, review_date: str, base_score: int) -> int:
+    """D10(신설, v4.1): 채무보증·담보제공 결정 공시. D1/D4와 같은 밴드 없는 단일 점수
+    패턴 - 구조화된 보증금액/자기자본 비율 데이터가 없어 바이너리로 둔다."""
+    grade = _grade_from_score(base_score)
+    cur.execute(
+        """
+        INSERT INTO mart.change_events
+            (corp_code, corp_name, review_date, change_type, rule_id, grade, score, is_emergency,
+             direction, rcept_no, description)
+        SELECT d.corp_code, co.corp_name, %(rd)s, 'disclosure', 'D10', %(grade)s, %(base)s, false,
+               'negative', d.rcept_no,
+               format('채무보증·담보제공 결정 공시: %%s', d.report_nm_clean)
+        FROM core.disclosures d
+        JOIN core.companies co USING (corp_code)
+        WHERE d.rcept_dt > %(rd)s
+          AND (d.report_nm_clean ILIKE '%%채무보증%%' OR d.report_nm_clean ILIKE '%%담보제공%%')
         """,
         {"rd": review_date, "base": base_score, "grade": grade},
     )
@@ -769,7 +796,7 @@ RULE_FNS = [
     ("F5", rule_f5), ("F6", rule_f6), ("F7", rule_f7),
     ("D1", rule_d1), ("D2", rule_d2), ("D3", rule_d3), ("D4", rule_d4), ("D5", rule_d5),
     ("D6A", rule_d6a), ("D6B", rule_d6b), ("D6C", rule_d6c), ("D6D", rule_d6d),
-    ("D7", rule_d7), ("D8", rule_d8), ("D9", rule_d9),
+    ("D7", rule_d7), ("D8", rule_d8), ("D9", rule_d9), ("D10", rule_d10),
 ]
 
 

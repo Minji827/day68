@@ -37,35 +37,43 @@ from typing import Any
 
 from .domain_map import D_RULE_IDS_V40, F_RULE_IDS_V40, RULE_DOMAIN_V40
 
-RULE_VERSION_DEFAULT = "4.0"
+RULE_VERSION_DEFAULT = "4.1"
 
 # 임계값·밴드·기본점수는 전부 여기 하나로 모은다 - 아래 로직 안에서 숫자를 직접 쓰지 않는다.
 # LEVELS는 "추가판단"용 3단계 밴드(intensity_bonus 0~3), MIN_RATE/MIN_DELTA_PP는 룰이
 # 아예 발동하는 "최초 후보" 임계값 - 스펙 5번 표의 두 컬럼 그대로.
+# v4.1 개정: 실제 기업들이 거의 다 "중간"에 몰려 변별력이 낮다는 팀 리뷰 피드백 반영 -
+# F1/F2/F4/F5/D2/D6D/D9/D5_MAJOR_AMOUNT의 base_score를 상향(근거는 sql/006_rule_catalog.sql
+# notes에 룰별로 기록 - 거래소 손익구조 변경 공시 기준·의무공시 기준선 차용). 등급 경계
+# (8/4)는 바꾸지 않음 - 세 엔진(이 파일/run_rules.py/rule_catalog SQL)이 전부 같은 숫자.
 THRESHOLDS: dict[str, Any] = {
-    "F1": {"BASE": 6, "LEVELS": (5, 10, 20)},
-    "F2": {"BASE": 6, "LEVELS": (5, 10, 20)},
+    "F1": {"BASE": 7, "LEVELS": (5, 10, 20)},
+    "F2": {"BASE": 7, "LEVELS": (5, 10, 20)},
     "F3": {"BASE": 3, "LEVELS": (20, 30, 50), "MIN_RATE": 0.10},
-    "F4": {"BASE": 3, "LEVELS": (20, 40, 80), "MIN_DELTA_PP": 20},
-    "F5": {"BASE": 4, "LEVELS": (5, 10, 20), "MIN_RATE": 0.20},
+    "F4": {"BASE": 4, "LEVELS": (20, 40, 80), "MIN_DELTA_PP": 20},
+    "F5": {"BASE": 5, "LEVELS": (5, 10, 20), "MIN_RATE": 0.20},
     "F6": {"BASE": 3, "LEVELS": (30, 50, 80), "MIN_RATE": 0.30},
     "F7": {"BASE": 3, "LEVELS": (30, 50, 80), "MIN_RATE": 0.30},
     "F8": {"BASE": 10},
     "D1": {"BASE": 4, "LEVELS": (5, 10, 20)},
-    "D2": {"BASE": 5, "LEVELS": (10, 20, 30)},
+    "D2": {"BASE": 6, "LEVELS": (10, 20, 30)},
     "D3": {"BASE": 10},
     "D4": {"BASE": 5},
     "D5_TYPO": {"BASE": 1},
     "D5_MINOR_CHANGE": {"BASE": 3},
-    "D5_MAJOR_AMOUNT": {"BASE": 6},
+    "D5_MAJOR_AMOUNT": {"BASE": 7},
     "D5_CORE_FINANCIAL": {"BASE": 9},
     "D6A": {"BASE": 4, "LEVELS": (5, 10, 20)},
     "D6B": {"BASE": 4, "LEVELS": (5, 10, 20)},
     "D6C": {"BASE": 4, "LEVELS": (5, 10, 20)},
-    "D6D": {"BASE": 5, "LEVELS": (5, 10, 20)},
+    "D6D": {"BASE": 6, "LEVELS": (5, 10, 20)},
     "D7": {"BASE": 10},
     "D8": {"BASE": 10},
-    "D9": {"BASE": 7},
+    "D9": {"BASE": 8},
+    # D10(신설, v4.1): 채무보증·담보제공 결정 공시. D1/D4와 같은 "밴드 없는 단일 점수"
+    # 패턴 - 구조화된 보증금액/자기자본 비율 데이터가 없어 바이너리로 둠(D1/D2 등과 동일
+    # 단순화, README_rule_engine.md 참고).
+    "D10": {"BASE": 6},
 }
 
 GRADE_RANK = {"높음": 2, "중간": 1, "낮음": 0}
@@ -472,6 +480,15 @@ def _evaluate_disclosure_rules(disclosures: list[dict]) -> tuple[list[dict], dic
                 f"중대한 영업정지·핵심사업중단 공시 ({rcept_dt})", rcept_no, None, [],
             ))
             created_event["D9"] = True
+
+        elif disc_type == "D10":
+            # 신설(v4.1): 채무보증·담보제공 결정 공시. D1/D4처럼 밴드 없는 단일 점수.
+            t = THRESHOLDS["D10"]
+            events.append(_make_event(
+                f"D10_{rcept_no}", "D10", group_id, t["BASE"], 0, False, "부정", None, None, None,
+                f"채무보증·담보제공 결정 공시 ({rcept_dt})", rcept_no, None, [],
+            ))
+            created_event["D10"] = True
 
     status: dict[str, str] = {}
     for rid in D_RULE_IDS_V40:

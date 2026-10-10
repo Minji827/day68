@@ -37,11 +37,13 @@ def base_disclosure(**overrides) -> dict:
 
 
 def test_f1_mid_band_is_mid_grade():
-    financial = base_financial(prev_op=100_000, curr_op=-50_000, curr_sales=2_000_000)  # b=7.5%
+    # v4.1: base가 6->7로 올라서 band1(7%대)까지 들어가면 이미 "높음"(8)이 된다 - "중간"을
+    # 유지하려면 band0(<5%)이어야 해서 curr_sales를 키워 b_val을 낮춤(팀 리뷰로 재조정).
+    financial = base_financial(prev_op=100_000, curr_op=-50_000, curr_sales=4_000_000)  # b=3.75%
     result = evaluate(CORP, REVIEW_DATE, CUTOFF, financial, [])
     assert result["rule_status"]["F1"] == "HIT"
     ev = result["events"][0]
-    assert ev["score"] == 7  # base6 + band1
+    assert ev["score"] == 7  # base7 + band0
     assert result["review_priority"]["grade"] == "중간"
 
 
@@ -49,7 +51,7 @@ def test_f1_large_band_is_high_grade():
     financial = base_financial(prev_op=100_000, curr_op=-50_000, curr_sales=500_000)  # b=30%
     result = evaluate(CORP, REVIEW_DATE, CUTOFF, financial, [])
     ev = result["events"][0]
-    assert ev["score"] == 9  # base6 + band3
+    assert ev["score"] == 10  # base7 + band3, 10에서 clamp
     assert result["review_priority"]["grade"] == "높음"
 
 
@@ -118,6 +120,16 @@ def test_d7_listing_concern_is_emergency():
     assert result["review_priority"]["grade"] == "긴급확인"
 
 
+def test_d10_guarantee_collateral_is_mid_grade():
+    disclosures = [base_disclosure(disc_type="D10", rcept_no="D10-1")]
+    result = evaluate(CORP, REVIEW_DATE, CUTOFF, None, disclosures)
+    assert result["rule_status"]["D10"] == "HIT"
+    ev = result["events"][0]
+    assert ev["score"] == 6  # base만, 밴드 없음
+    assert ev["is_emergency"] is False
+    assert result["review_priority"]["grade"] == "중간"
+
+
 def test_d5_typo_alone_is_low_grade_not_no_change():
     # v3.3-core는 U0(TYPO)을 후보에서 아예 제외해서 기업등급이 "변화없음"이 됐지만,
     # v4.0은 점수 기반(1점이라도 최소 "낮음")이라 이벤트가 있으면 "변화없음"이 아니다 -
@@ -151,14 +163,16 @@ def test_f1_missing_sales_gives_ratio_not_computable():
     financial = base_financial(prev_op=100_000, curr_op=-50_000, curr_sales=None)
     result = evaluate(CORP, REVIEW_DATE, CUTOFF, financial, [])
     ev = result["events"][0]
-    assert ev["score"] == 6  # base만, intensity 0
+    assert ev["score"] == 7  # base만(v4.1: 7), intensity 0
     assert "RATIO_NOT_COMPUTABLE" in ev["status"]
     assert result["rule_status"]["F1"] == "HIT"
 
 
 def test_group_dedup_emergency_wins_over_equal_score_normal_event():
+    # v4.1: F1 base가 7로 올라서 D5(CORE_FINANCIAL=9)와 동점을 맞추려면 band2(10~20%)여야
+    # 한다 - curr_sales를 band3(30%)에서 band2 구간으로 조정.
     financial = base_financial(
-        prev_op=100_000, curr_op=-50_000, curr_sales=500_000,  # F1 score=9 (band3)
+        prev_op=100_000, curr_op=-50_000, curr_sales=1_000_000,  # F1 score=9 (base7+band2, b=15%)
         event_group_id="G1",
     )
     disclosures = [base_disclosure(
