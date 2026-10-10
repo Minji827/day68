@@ -30,7 +30,9 @@ import db
 QUARTER_REPRT_CODE = {1: "11013", 2: "11012", 3: "11014", 4: "11011"}
 
 # 손익계산서(IS) 항목: thstrm_amount가 이미 "그 분기 3개월"만의 값 (DART 공식 문서 확인).
-IS_ACCOUNTS = ("REVENUE", "OP_INCOME")
+# v4.2-1: NET_INCOME(당기순이익) 추가 - 분기 차트에 순이익률 보여주려고 필요(팀 리뷰).
+# 손익계산서 항목이라 REVENUE/OP_INCOME과 동일하게 취급(별도 분기 분리 계산 불필요).
+IS_ACCOUNTS = ("REVENUE", "OP_INCOME", "NET_INCOME")
 # 현금흐름표(CF) 항목: thstrm_add_amount 필드가 없음 - 중간보고 현금흐름표의 통상적인
 # 누적 공시 관행에 따라 thstrm_amount를 "연초 누적"으로 보고 분기끼리 빼서 분리한다
 # (DART 공식 문서에 명시는 없음 - 최선 추정, 코드 설명 참고).

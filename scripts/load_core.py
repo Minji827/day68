@@ -177,6 +177,11 @@ def load_disclosures(cur, corp_code: str | None = None) -> None:
     )
 
 
+# "당기순이익"류 계정명이 IS 외 섹션(CIS/CF/SCE)에도 중복 등장하는 게 확인된 표준계정만
+# sj_div='IS'로 한정한다 (REVENUE/OP_INCOME은 실측상 중복이 없어 불필요 - 범위를 넓히지 않음).
+IS_ONLY_STD_CODES = {"NET_INCOME"}
+
+
 def load_financial_accounts(cur, corp_code: str | None = None) -> None:
     cur.execute("SELECT account_nm_raw, account_std_code, account_std_name, agg_method FROM core.account_mapping")
     mapping: dict[str, list[tuple[str, str, str]]] = {}
@@ -213,6 +218,12 @@ def load_financial_accounts(cur, corp_code: str | None = None) -> None:
             account_nm = item.get("account_nm", "").strip()
             if account_nm not in mapping:
                 continue
+            # v4.2-1 실측 버그: "당기순이익"/"분기순이익" 계정명은 손익계산서(IS)뿐 아니라
+            # 포괄손익계산서(CIS)·현금흐름표(CF)·자본변동표(SCE)에도 (DART 공시 관행상)
+            # 동일 문자열로 중복 등장한다 - sj_div 구분 없이 합치면 실제 값의 몇 배로
+            # 부풀려진다(삼성전자 2026 1Q 실측: 필터 전 283조 vs 손익계산서상 실제 47조).
+            # 손익계산서(IS) 전용 표준계정은 그 섹션에서만 집계한다.
+            sj_div = item.get("sj_div")
             thstrm = to_decimal(item.get("thstrm_amount"))
             frmtrm = to_decimal(item.get("frmtrm_amount"))
             # 분기/반기 보고서의 손익계산서 항목에서만 오는 필드 - 없으면 None 그대로 둔다
@@ -222,6 +233,8 @@ def load_financial_accounts(cur, corp_code: str | None = None) -> None:
             frmtrm_q = to_decimal(item.get("frmtrm_q_amount"))
             frmtrm_add = to_decimal(item.get("frmtrm_add_amount"))
             for std_code, std_name, agg_method in mapping[account_nm]:
+                if std_code in IS_ONLY_STD_CODES and sj_div != "IS":
+                    continue
                 key = (corp_code, bsns_year, reprt_code, fs_div, std_code)
                 if key not in agg:
                     agg[key] = {

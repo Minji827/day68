@@ -7,6 +7,10 @@
 -- 단기차입금은 두 표준계정에 동시 기여: BORROWINGS(장단기 합산, F5용)와
 -- ST_BORROWINGS(단기만 단독, D1용).
 
+-- v4.2-1: 당기순이익(NET_INCOME) 추가 — 분기 차트에 순이익률(당기순이익/매출액)을
+-- 보여주기 위해 필요(팀 리뷰: "영업이익률뿐 아니라 순이익률도 같이 보는 지표").
+-- 사업보고서는 '당기순이익(손실)', 분기/반기보고서는 '분기순이익(손실)'/'반기순이익
+-- (손실)'로 계정명이 다르게 나온다(실제 수집 데이터로 확인) — 전부 같은 표준계정으로.
 INSERT INTO core.account_mapping (account_nm_raw, account_std_code, account_std_name, agg_method) VALUES
     ('매출액',                   'REVENUE',        '매출액',          'direct'),
     ('영업이익',                 'OP_INCOME',      '영업이익',         'direct'),
@@ -17,5 +21,11 @@ INSERT INTO core.account_mapping (account_nm_raw, account_std_code, account_std_
     ('영업활동으로 인한 현금흐름', 'OCF',            '영업활동현금흐름',  'direct'),
     ('장기차입금',               'BORROWINGS',     '차입금',          'sum'),
     ('단기차입금',               'BORROWINGS',     '차입금',          'sum'),
-    ('단기차입금',               'ST_BORROWINGS',  '단기차입금',       'direct')
+    ('단기차입금',               'ST_BORROWINGS',  '단기차입금',       'direct'),
+    ('당기순이익',               'NET_INCOME',     '당기순이익',       'direct'),
+    ('당기순이익(손실)',          'NET_INCOME',     '당기순이익',       'direct'),
+    ('분기순이익',               'NET_INCOME',     '당기순이익',       'direct'),
+    ('분기순이익(손실)',          'NET_INCOME',     '당기순이익',       'direct'),
+    ('반기순이익',               'NET_INCOME',     '당기순이익',       'direct'),
+    ('반기순이익(손실)',          'NET_INCOME',     '당기순이익',       'direct')
 ON CONFLICT (account_nm_raw, account_std_code) DO NOTHING;
