@@ -202,13 +202,6 @@
   .section-title-sub { font-size: 11px; color: var(--text-muted); }
 
   .chart-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .metric-checks { display: flex; gap: 8px; flex-wrap: wrap; }
-  .metric-check { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: var(--text-secondary);
-    cursor: pointer; user-select: none; padding: 5px 10px 5px 7px; border-radius: 8px; background: var(--muted-bg); border: 1px solid var(--border); }
-  .metric-check input { position: absolute; opacity: 0; width: 0; height: 0; }
-  .metric-check .box { width: 15px; height: 15px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: transparent; font-size: 10px; font-weight: 900; }
-  .metric-check input:checked + .box { background: var(--chk, var(--brand)); border-color: var(--chk, var(--brand)); color: #fff; }
   .toggle-btn { font-family: inherit; font-size: 11.5px; font-weight: 700; padding: 6px 13px; border-radius: 99px;
     border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
   .toggle-btn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
@@ -382,11 +375,6 @@
           <div class="panel-head">
             <div class="panel-title">분기별 지표 추이 (전년 비교)</div>
             <div class="chart-controls">
-              <div class="metric-checks" id="q-metric-checks">
-                <label class="metric-check" style="--chk:var(--series-1);"><input type="checkbox" value="REVENUE" checked><span class="box">✓</span>매출액</label>
-                <label class="metric-check" style="--chk:var(--series-2);"><input type="checkbox" value="OP_INCOME" checked><span class="box">✓</span>영업이익</label>
-                <label class="metric-check" style="--chk:var(--series-3);"><input type="checkbox" value="OCF" checked><span class="box">✓</span>영업활동현금흐름</label>
-              </div>
               <button class="toggle-btn on" id="q-overlay-toggle"><span class="dot"></span>작년 함께 보기 ON</button>
             </div>
           </div>
@@ -602,12 +590,9 @@
     corpSelect.onchange = () => renderSummary(corpSelect.value === "all" ? rankedForSelect[0].corp_code : corpSelect.value);
     dCorpSelect.onchange = () => renderDetail(dCorpSelect.value);
 
-    // 분기 차트의 체크박스/토글은 기업을 바꿔도 선택 상태가 유지되게, 매 렌더마다 다시
-    // 그리지 않고 .onclick/.onchange 프로퍼티 할당(= 덮어쓰기)만 한다 - addEventListener면
-    // renderAll()이 여러 번 불릴 때(재분석 등) 리스너가 계속 쌓인다.
-    document.querySelectorAll("#q-metric-checks input").forEach((c) => {
-      c.onchange = () => renderQuarterlyChart(dCorpSelect.value);
-    });
+    // 분기 차트의 토글은 기업을 바꿔도 선택 상태가 유지되게, 매 렌더마다 다시 그리지
+    // 않고 .onclick 프로퍼티 할당(= 덮어쓰기)만 한다 - addEventListener면 renderAll()이
+    // 여러 번 불릴 때(재분석 등) 리스너가 계속 쌓인다.
     const qToggle = document.getElementById("q-overlay-toggle");
     qToggle.onclick = () => {
       qShowOverlay = !qShowOverlay;
@@ -800,27 +785,24 @@
   }
 
   // ---- 분기별 지표 추이 (기업 상세 1번 섹션 차트) ----
-  const Q_METRICS = {
-    REVENUE: { label: "매출액", color: "var(--series-1)" },
-    OP_INCOME: { label: "영업이익", color: "var(--series-2)" },
-    OCF: { label: "영업활동현금흐름", color: "var(--series-3)" },
-  };
+  // v4.2-2: 팀 리뷰 피드백("매출/영업이익률/순이익률이 실제로 같이 보는 지표")에 따라
+  // 금액 스택 막대(매출+영업이익+OCF)를 매출액 막대(좌축, 억원) + 영업이익률·순이익률
+  // 선(우축, %) 콤보 차트로 재설계. 같은 업종은 영업이익률이 비슷한 경우가 많아서,
+  // 한 기업의 영업이익률이 튀면 그 자체로 눈에 띄는 참고 신호가 된다는 피드백도 반영.
   let qShowOverlay = true;
   // 매번 "억"을 안 붙이고, 차트 아래에 "단위: 억원" 캡션 한 번만 표시한다(renderQuarterlyChart 끝부분).
   const fmtEok = (n) => n == null ? "—" : (n / 1e8).toLocaleString("ko-KR", { maximumFractionDigits: 1 });
+  const fmtMarginPct = (n) => n == null ? "—" : n.toFixed(1) + "%";
+  // 매출이 0/결측이면 비율이 무의미하므로 null(선 끊김)로 둔다 - 0%로 그리면 "실제로
+  // 0%"와 "계산 불가"가 섞여 보인다.
+  const marginOf = (num, rev) => (num == null || rev == null || rev === 0) ? null : (num / rev) * 100;
 
   function renderQuarterlyChart(corpCode) {
     const host = document.getElementById("slope-chart");
-    const checks = Array.prototype.slice.call(document.querySelectorAll("#q-metric-checks input"));
-    const selected = Object.keys(Q_METRICS).filter((k) => checks.some((c) => c.value === k && c.checked));
     const qRows = (DATA.quarterly_financials || []).filter((q) => q.corp_code === corpCode);
 
     if (!qRows.length) {
       host.innerHTML = '<div class="empty-note">분기별 데이터 없음 — 이 기업을 다시 분석하면 1·2분기(또는 그 이상) 보고서가 공시된 만큼 채워집니다.</div>';
-      return;
-    }
-    if (!selected.length) {
-      host.innerHTML = '<div class="empty-note">지표를 1개 이상 선택하세요</div>';
       return;
     }
 
@@ -830,101 +812,136 @@
     // 작년은 항상 4분기 전부 나오고(이미 지난 해라 보고서가 다 있음), 올해는 아직 안 나온
     // 분기(예: 3분기는 11월에야 공시)는 비어있는 게 정상 - curr_amount가 없어도 prior_amount만
     // 있으면 그 분기를 보여준다(올해 막대만 비워두고 작년 막대는 그대로 보여줌).
-    const quarters = [1, 2, 3, 4].filter((q) => selected.some((k) => byAccount[k]?.[q]?.curr_amount != null || byAccount[k]?.[q]?.prior_amount != null));
+    const KEYS = ["REVENUE", "OP_INCOME", "NET_INCOME"];
+    const quarters = [1, 2, 3, 4].filter((q) => KEYS.some((k) => byAccount[k]?.[q]?.curr_amount != null || byAccount[k]?.[q]?.prior_amount != null));
     if (!quarters.length) {
       host.innerHTML = '<div class="empty-note">선택한 지표의 분기 데이터 없음</div>';
       return;
     }
 
-    const W = 620, H = 220, padL = 46, padR = 150, padT = 20, padB = 26;
+    const data = quarters.map((q) => {
+      const revCurr = byAccount.REVENUE?.[q]?.curr_amount ?? null;
+      const revPrior = byAccount.REVENUE?.[q]?.prior_amount ?? null;
+      const opCurr = byAccount.OP_INCOME?.[q]?.curr_amount ?? null;
+      const opPrior = byAccount.OP_INCOME?.[q]?.prior_amount ?? null;
+      const netCurr = byAccount.NET_INCOME?.[q]?.curr_amount ?? null;
+      const netPrior = byAccount.NET_INCOME?.[q]?.prior_amount ?? null;
+      return {
+        q, revCurr, revPrior,
+        opMarginCurr: marginOf(opCurr, revCurr), opMarginPrior: marginOf(opPrior, revPrior),
+        netMarginCurr: marginOf(netCurr, revCurr), netMarginPrior: marginOf(netPrior, revPrior),
+      };
+    });
+
+    // padL: 매출 억원 축 라벨이 큰 기업(예: 삼성전자 1,972,243.9억)에서 10자 넘게
+    // 길어질 수 있어 - 짧으면 SVG viewBox 왼쪽 밖으로 텍스트가 잘린다(실측 버그).
+    const W = 620, H = 230, padL = 66, padR = 46, padT = 22, padB = 26;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const n = quarters.length;
     const xPos = (i) => padL + ((i + 0.5) / n) * plotW;
 
-    const currStacks = quarters.map((q) => selected.reduce((sum, k) => sum + (byAccount[k]?.[q]?.curr_amount ?? 0), 0));
-    const priorStacks = qShowOverlay ? quarters.map((q) => selected.reduce((sum, k) => sum + (byAccount[k]?.[q]?.prior_amount ?? 0), 0)) : [];
-    const allVals = currStacks.concat(priorStacks);
-    const maxV = Math.max(1, ...allVals) * 1.15;
-    const y = (v) => padT + plotH - (Math.max(0, v) / maxV) * plotH;
+    // 좌축(매출, 억원): 0부터 시작 - 항상 양수.
+    const revVals = data.flatMap((d) => qShowOverlay ? [d.revCurr, d.revPrior] : [d.revCurr]).filter((v) => v != null);
+    const maxRev = Math.max(1, ...revVals) * 1.15;
+    const yRev = (v) => padT + plotH - (Math.max(0, v) / maxRev) * plotH;
+
+    // 우축(%): 영업이익률/순이익률은 적자면 음수가 될 수 있어(예: 예시B) 0을 포함하는
+    // 대칭 도메인을 쓴다 - 음수 구간이 전혀 없으면 보통 막대 바닥(0%)에 가깝게 보임.
+    const pctVals = data.flatMap((d) => qShowOverlay
+      ? [d.opMarginCurr, d.netMarginCurr, d.opMarginPrior, d.netMarginPrior]
+      : [d.opMarginCurr, d.netMarginCurr]).filter((v) => v != null);
+    let pctMin = Math.min(0, ...pctVals), pctMax = Math.max(0, ...pctVals);
+    if (!pctVals.length) { pctMin = -10; pctMax = 10; }
+    const pctPad = (pctMax - pctMin || 20) * 0.15;
+    pctMin -= pctPad; pctMax += pctPad;
+    const yPct = (v) => padT + plotH - ((v - pctMin) / (pctMax - pctMin)) * plotH;
 
     const slotW = plotW / n;
     const barW = qShowOverlay ? slotW * 0.3 : slotW * 0.42;
     const gap = slotW * 0.08;
 
     let svg = `<line x1="${padL}" y1="${padT+plotH}" x2="${W-padR}" y2="${padT+plotH}" stroke="var(--baseline)" stroke-width="1"/>`;
-    [0.5, 1].forEach((f) => {
+    [0, 0.5, 1].forEach((f) => {
       const yy = padT + plotH * (1 - f);
-      svg += `<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="var(--grid)" stroke-width="1" stroke-dasharray="2 4"/><text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9.5" fill="var(--text-muted)">${fmtEok(f*maxV/1.15)}</text>`;
+      if (f > 0) svg += `<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="var(--grid)" stroke-width="1" stroke-dasharray="2 4"/>`;
+      svg += `<text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9.5" fill="var(--text-muted)">${fmtEok(f*maxRev)}</text>`;
+      svg += `<text x="${W-padR+6}" y="${yy+3}" text-anchor="start" font-size="9.5" fill="var(--text-muted)">${(pctMin+f*(pctMax-pctMin)).toFixed(0)}%</text>`;
     });
+    // pct 도메인이 음수를 포함하면(위 그리드와 안 겹치는 자리일 수 있음) 0% 기준선을
+    // 별도로 얇게 그려서 "흑자/적자 경계"가 눈에 띄게 한다.
+    if (pctVals.length && pctMin < 0) {
+      const y0 = yPct(0);
+      svg += `<line x1="${padL}" y1="${y0}" x2="${W-padR}" y2="${y0}" stroke="var(--critical)" stroke-width="1" stroke-opacity="0.35" stroke-dasharray="1 3"/>`;
+    }
 
     const geoms = quarters.map((q, i) => {
+      const d = data[i];
       const cx = xPos(i);
       const currX = qShowOverlay ? cx - gap / 2 - barW : cx - barW / 2;
       const priorX = cx + gap / 2;
-      const hasCurr = selected.some((k) => byAccount[k]?.[q]?.curr_amount != null);
-      let running = 0;
-      const segs = selected.map((k) => {
-        const v = byAccount[k]?.[q]?.curr_amount ?? 0;
-        const seg = { key: k, from: running, to: running + v, v };
-        running += v;
-        return seg;
-      });
-      let priorRunning = 0;
-      const priorSegs = qShowOverlay ? selected.map((k) => {
-        const v = byAccount[k]?.[q]?.prior_amount ?? 0;
-        const seg = { key: k, from: priorRunning, to: priorRunning + v, v };
-        priorRunning += v;
-        return seg;
-      }) : [];
-      return { q, currX, segs, priorX, priorSegs, hasCurr, total: running, priorTotal: priorRunning };
+      return { ...d, cx, currX, priorX };
     });
 
     geoms.forEach((g) => {
-      g.priorSegs.forEach((seg) => {
-        svg += `<rect x="${g.priorX}" y="${y(seg.to)}" width="${barW}" height="${y(seg.from)-y(seg.to)}" fill="${Q_METRICS[seg.key].color}" fill-opacity="0.3"/>`;
-      });
-      // 올해 그 분기 보고서가 아직 하나도 안 올라왔으면(hasCurr=false) 0 높이 막대를
+      if (qShowOverlay && g.revPrior != null) {
+        svg += `<rect x="${g.priorX}" y="${yRev(g.revPrior)}" width="${barW}" height="${yRev(0)-yRev(g.revPrior)}" fill="var(--series-1)" fill-opacity="0.3"/>`;
+      }
+      // 올해 그 분기 보고서가 아직 하나도 안 올라왔으면(revCurr=null) 0 높이 막대를
       // 그리는 대신, "미공시"라고 적어서 "실제로 0"과 헷갈리지 않게 한다.
-      if (g.hasCurr) {
-        g.segs.forEach((seg) => {
-          svg += `<rect x="${g.currX}" y="${y(seg.to)}" width="${barW}" height="${y(seg.from)-y(seg.to)}" fill="${Q_METRICS[seg.key].color}"/>`;
-        });
+      if (g.revCurr != null) {
+        svg += `<rect x="${g.currX}" y="${yRev(g.revCurr)}" width="${barW}" height="${yRev(0)-yRev(g.revCurr)}" fill="var(--series-1)"/>`;
       } else {
-        svg += `<text x="${g.currX + barW/2}" y="${y(0)-6}" text-anchor="middle" font-size="9.5" fill="var(--text-muted)">미공시</text>`;
+        svg += `<text x="${g.currX + barW/2}" y="${yRev(0)-6}" text-anchor="middle" font-size="9.5" fill="var(--text-muted)">미공시</text>`;
       }
     });
-    const lastIdx = geoms.length - 1;
-    const lastG = geoms[lastIdx];
-    if (lastG.hasCurr) {
-      svg += `<text x="${lastG.currX + barW/2}" y="${y(lastG.total)-9}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--text-primary)" class="num">${fmtEok(lastG.total)}</text>`;
+
+    // 선(영업이익률/순이익률): 결측 지점에서 선이 끊기도록 구간별로 M/L을 새로 연다.
+    function linePath(key) {
+      let d = "", open = false;
+      geoms.forEach((g) => {
+        const v = g[key];
+        if (v == null) { open = false; return; }
+        const cmd = open ? "L" : "M";
+        d += `${cmd}${g.cx},${yPct(v)} `;
+        open = true;
+      });
+      return d.trim();
     }
-    if (lastG.priorSegs.length) {
-      svg += `<text x="${lastG.priorX + barW/2}" y="${y(lastG.priorTotal)-9}" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--text-muted)" class="num">${fmtEok(lastG.priorTotal)}</text>`;
+    function lineSeries(key, color, { dashed = false } = {}) {
+      const d = linePath(key);
+      if (!d) return "";
+      let out = `<path d="${d}" fill="none" stroke="${color}" stroke-width="${dashed ? 1.5 : 2}" ${dashed ? 'stroke-dasharray="4 3" stroke-opacity="0.55"' : ""}/>`;
+      if (!dashed) {
+        geoms.forEach((g) => {
+          if (g[key] == null) return;
+          out += `<circle cx="${g.cx}" cy="${yPct(g[key])}" r="3.4" fill="${color}" stroke="var(--surface-raised)" stroke-width="1.2"/>`;
+        });
+      }
+      return out;
     }
+    if (qShowOverlay) {
+      svg += lineSeries("opMarginPrior", "var(--series-2)", { dashed: true });
+      svg += lineSeries("netMarginPrior", "var(--series-3)", { dashed: true });
+    }
+    svg += lineSeries("opMarginCurr", "var(--series-2)");
+    svg += lineSeries("netMarginCurr", "var(--series-3)");
+
     quarters.forEach((q, i) => {
       svg += `<text x="${xPos(i)}" y="${H-8}" text-anchor="middle" font-size="11" fill="var(--text-secondary)">${q}Q</text>`;
     });
 
-    const annoTop = H / 2 - (selected.length - 1) * 24;
-    selected.forEach((k, idx) => {
-      const priorSum = quarters.reduce((s, q) => s + (byAccount[k]?.[q]?.prior_amount ?? 0), 0);
-      const currSum = quarters.reduce((s, q) => s + (byAccount[k]?.[q]?.curr_amount ?? 0), 0);
-      const pct = priorSum ? ((currSum - priorSum) / priorSum) * 100 : null;
-      const yy = annoTop + idx * 48;
-      svg += `<text x="${W-padR+18}" y="${yy-6}" font-size="11" fill="var(--text-secondary)">${esc(Q_METRICS[k].label)}</text>`;
-      svg += `<text x="${W-padR+18}" y="${yy+12}" font-size="13" font-weight="700" fill="${pct==null ? 'var(--text-muted)' : (pct<0 ? 'var(--critical)' : 'var(--good)')}" class="num">${pct==null ? '—' : fmtPct(pct/100)}</text>`;
-    });
-
     host.innerHTML = `<div class="chart-stage"><svg viewBox="0 0 ${W} ${H}" width="100%">${svg}<g class="qc-crosshair"></g></svg></div>` +
       `<div class="legend" style="margin-top:8px;">` +
-      selected.map((k) => `<div class="legend-item"><span class="legend-dot" style="background:${Q_METRICS[k].color}"></span>${esc(Q_METRICS[k].label)}</div>`).join("") +
-      (qShowOverlay ? `<div class="legend-item"><span class="legend-dot" style="background:var(--prior)"></span>작년 (선택한 지표만, 연한 색)</div>` : "") +
-      `</div><div class="chart-hint" style="margin-top:4px;">단위: 억원 · 분기를 클릭하면 그 분기 수치가 말풍선으로 뜹니다.</div>`;
+      `<div class="legend-item"><span class="legend-dot" style="background:var(--series-1)"></span>매출액 (좌축, 억원)</div>` +
+      `<div class="legend-item"><span class="legend-dot" style="background:var(--series-2)"></span>영업이익률 (우축, %)</div>` +
+      `<div class="legend-item"><span class="legend-dot" style="background:var(--series-3)"></span>순이익률 (우축, %)</div>` +
+      (qShowOverlay ? `<div class="legend-item"><span class="legend-dot" style="background:var(--prior)"></span>작년 (연한 막대 · 점선)</div>` : "") +
+      `</div><div class="chart-hint" style="margin-top:4px;">매출 단위: 억원 · 분기를 클릭하면 그 분기 수치가 말풍선으로 뜹니다.</div>`;
 
-    wireQuarterlyInteraction(host, geoms, y, selected, barW);
+    wireQuarterlyInteraction(host, geoms, yRev, barW);
   }
 
-  function wireQuarterlyInteraction(host, geoms, y, selected, barW) {
+  function wireQuarterlyInteraction(host, geoms, yRev, barW) {
     const stage = host.querySelector(".chart-stage");
     const svgEl = stage.querySelector("svg");
     const layer = svgEl.querySelector(".qc-crosshair");
@@ -936,30 +953,28 @@
       const g = geoms[i];
 
       let hl = "";
-      if (g.hasCurr) {
-        g.segs.forEach((seg) => {
-          hl += `<rect x="${g.currX-1.5}" y="${y(seg.to)-1.5}" width="${barW+3}" height="${y(seg.from)-y(seg.to)+3}" fill="none" stroke="var(--text-primary)" stroke-width="1" opacity="0.35"/>`;
-        });
+      if (g.revCurr != null) {
+        hl += `<rect x="${g.currX-1.5}" y="${yRev(g.revCurr)-1.5}" width="${barW+3}" height="${yRev(0)-yRev(g.revCurr)+3}" fill="none" stroke="var(--text-primary)" stroke-width="1" opacity="0.35"/>`;
       }
-      if (g.priorSegs.length) {
-        hl += `<rect x="${g.priorX-1.5}" y="${y(g.priorTotal)-1.5}" width="${barW+3}" height="${y(0)-y(g.priorTotal)+3}" fill="none" stroke="var(--text-primary)" stroke-width="1" opacity="0.35"/>`;
+      if (g.revPrior != null) {
+        hl += `<rect x="${g.priorX-1.5}" y="${yRev(g.revPrior)-1.5}" width="${barW+3}" height="${yRev(0)-yRev(g.revPrior)+3}" fill="none" stroke="var(--text-primary)" stroke-width="1" opacity="0.35"/>`;
       }
       layer.innerHTML = hl;
 
       const old = stage.querySelector(".chart-tip");
       if (old) old.remove();
-      let rows = selected.map((k) => {
-        const seg = g.segs.find((s) => s.key === k);
-        const valText = g.hasCurr ? `${fmtNum(seg ? seg.v : 0)}원` : "미공시";
-        return `<div class="tip-row"><span class="k"><span class="sw" style="background:${Q_METRICS[k].color}"></span>${esc(Q_METRICS[k].label)}</span><span class="v">${valText}</span></div>`;
-      }).join("");
-      if (g.priorSegs.length) {
-        rows += `<div class="tip-row" style="margin-top:5px; padding-top:5px; border-top:1px solid var(--border);"><span class="k">작년 합계</span><span class="v prior">${fmtNum(g.priorTotal)}원</span></div>`;
+      const revText = g.revCurr != null ? `${fmtEok(g.revCurr)}억원` : "미공시";
+      let rows = `<div class="tip-row"><span class="k"><span class="sw" style="background:var(--series-1)"></span>매출액</span><span class="v">${revText}</span></div>` +
+        `<div class="tip-row"><span class="k"><span class="sw" style="background:var(--series-2)"></span>영업이익률</span><span class="v">${fmtMarginPct(g.opMarginCurr)}</span></div>` +
+        `<div class="tip-row"><span class="k"><span class="sw" style="background:var(--series-3)"></span>순이익률</span><span class="v">${fmtMarginPct(g.netMarginCurr)}</span></div>`;
+      if (g.revPrior != null || g.opMarginPrior != null || g.netMarginPrior != null) {
+        rows += `<div class="tip-row" style="margin-top:5px; padding-top:5px; border-top:1px solid var(--border);"><span class="k">작년 매출</span><span class="v prior">${g.revPrior != null ? fmtEok(g.revPrior) + "억원" : "—"}</span></div>` +
+          `<div class="tip-row"><span class="k">작년 영업이익률 / 순이익률</span><span class="v prior">${fmtMarginPct(g.opMarginPrior)} / ${fmtMarginPct(g.netMarginPrior)}</span></div>`;
       }
       const tip = document.createElement("div");
       tip.className = "chart-tip";
       const svgW = 620;
-      tip.style.left = ((g.currX + barW / 2) / svgW * 100) + "%";
+      tip.style.left = (g.cx / svgW * 100) + "%";
       tip.style.top = "10%";
       tip.innerHTML = `<div class="tip-q">${g.q}분기</div>${rows}`;
       stage.appendChild(tip);
