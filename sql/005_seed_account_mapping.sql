@@ -11,8 +11,15 @@
 -- 보여주기 위해 필요(팀 리뷰: "영업이익률뿐 아니라 순이익률도 같이 보는 지표").
 -- 사업보고서는 '당기순이익(손실)', 분기/반기보고서는 '분기순이익(손실)'/'반기순이익
 -- (손실)'로 계정명이 다르게 나온다(실제 수집 데이터로 확인) — 전부 같은 표준계정으로.
+-- v4.3-2: 영업수익(REVENUE) 추가 — NAVER·이스트에이드·SK스퀘어처럼 지주사/플랫폼
+-- 기업은 매출을 "매출액"이 아니라 "영업수익"으로 공시해서, 이 계정명이 없으면
+-- REVENUE가 통째로 비어 F3(매출 YoY)가 평가 자체를 못 한다(실측: NAVER도 REVENUE 0건
+-- 이었음). 다만 SK스퀘어는 같은 보고서에 "매출액"과 "영업수익"을 같은 금액으로 둘 다
+-- 공시해서, 이 둘을 합산하면 매출이 2배로 뻥튀기된다(scripts/load_core.py의
+-- EXCLUSIVE_STD_CODE_PRIORITY가 "매출액" 우선으로 하나만 골라 처리 — 합산 안 함).
 INSERT INTO core.account_mapping (account_nm_raw, account_std_code, account_std_name, agg_method) VALUES
     ('매출액',                   'REVENUE',        '매출액',          'direct'),
+    ('영업수익',                 'REVENUE',        '매출액',          'direct'),
     ('영업이익',                 'OP_INCOME',      '영업이익',         'direct'),
     ('영업이익(손실)',            'OP_INCOME',      '영업이익',         'direct'),
     ('부채총계',                 'TOTAL_LIAB',     '부채총계',         'direct'),

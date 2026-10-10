@@ -181,6 +181,15 @@ def load_disclosures(cur, corp_code: str | None = None) -> None:
 # sj_div='IS'로 한정한다 (REVENUE/OP_INCOME은 실측상 중복이 없어 불필요 - 범위를 넓히지 않음).
 IS_ONLY_STD_CODES = {"NET_INCOME"}
 
+# v4.3-2 실측 버그: REVENUE는 "매출액"뿐 아니라 "영업수익"(NAVER·이스트에이드·SK스퀘어
+# 등 지주사/플랫폼 기업이 쓰는 동의어)도 매핑해야 하는데, SK스퀘어는 같은 보고서 안에
+# 두 계정명을 "같은 값"으로 둘 다 공시한다(실측: 1,906,611,000,000원씩 동일). 기존
+# 합산 로직을 그대로 쓰면 이런 기업은 매출이 2배로 뻥튀기된다(NET_INCOME 중복집계
+# 버그와 같은 종류) - REVENUE는 합산 대상이 아니라 "동의어 중 하나만" 골라야 한다.
+# 우선순위 목록: 먼저 오는 이름이 이미 값을 채웠으면 나중 동의어는 무시, 나중에 더
+# 우선순위 높은 이름이 오면 덮어쓴다(순서 무관하게 항상 '매출액' 승리).
+EXCLUSIVE_STD_CODE_PRIORITY = {"REVENUE": ("매출액", "영업수익")}
+
 
 def load_financial_accounts(cur, corp_code: str | None = None) -> None:
     cur.execute("SELECT account_nm_raw, account_std_code, account_std_name, agg_method FROM core.account_mapping")
@@ -236,6 +245,18 @@ def load_financial_accounts(cur, corp_code: str | None = None) -> None:
                 if std_code in IS_ONLY_STD_CODES and sj_div != "IS":
                     continue
                 key = (corp_code, bsns_year, reprt_code, fs_div, std_code)
+                priority_list = EXCLUSIVE_STD_CODE_PRIORITY.get(std_code)
+                if priority_list is not None:
+                    this_priority = priority_list.index(account_nm) if account_nm in priority_list else len(priority_list)
+                    existing = agg.get(key)
+                    if existing is not None and this_priority >= existing["_src_priority"]:
+                        continue  # 이미 더 우선순위 높은(또는 동률) 동의어가 채워져 있음 - 합치지 않고 버림
+                    agg[key] = {
+                        "std_name": std_name, "thstrm": thstrm or Decimal(0), "frmtrm": frmtrm or Decimal(0),
+                        "thstrm_add": thstrm_add, "frmtrm_q": frmtrm_q, "frmtrm_add": frmtrm_add,
+                        "_src_priority": this_priority,
+                    }
+                    continue
                 if key not in agg:
                     agg[key] = {
                         "std_name": std_name, "thstrm": thstrm or Decimal(0), "frmtrm": frmtrm or Decimal(0),
