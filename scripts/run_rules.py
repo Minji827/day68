@@ -640,7 +640,10 @@ rule_d6d = _rule_d6("D6D", "negative")
 
 def rule_d7(cur, review_date: str, base_score: int) -> int:
     """D7(신설): 관리종목 지정·상장적격성 실질심사·상장폐지. 긴급확인 7개 조건 중
-    하나 - 등장 자체로 항상 긴급확인."""
+    하나 - 등장 자체로 항상 긴급확인.
+    v4.3-3: "해제"가 같이 들어간 제목(예: 관리종목지정'해제' - 위험군에서 빠졌다는
+    좋은 소식)은 제외한다 - 지정/심사/폐지 자체가 아니라 그 반대 방향이라 긴급확인과
+    정반대 의미인데 키워드만 보면 똑같이 매칭됐었다."""
     cur.execute(
         f"""
         INSERT INTO mart.change_events
@@ -655,6 +658,7 @@ def rule_d7(cur, review_date: str, base_score: int) -> int:
         WHERE {_NEW_EVENT_WHERE_SQL}
           AND (d.report_nm_clean ILIKE '%%관리종목%%' OR d.report_nm_clean ILIKE '%%상장적격성%%'
                OR d.report_nm_clean ILIKE '%%상장폐지%%')
+          AND d.report_nm_clean NOT ILIKE '%%해제%%'
         """,
         {"rd": review_date, "base": base_score, "lookback": FIRST_REVIEW_LOOKBACK_DAYS},
     )
@@ -662,7 +666,12 @@ def rule_d7(cur, review_date: str, base_score: int) -> int:
 
 
 def rule_d8(cur, review_date: str, base_score: int) -> int:
-    """D8(신설): 매매거래정지·회생절차개시신청·부도. 긴급확인 7개 조건 중 하나."""
+    """D8(신설): 매매거래정지·회생절차개시신청·부도. 긴급확인 7개 조건 중 하나.
+    v4.3-3: "거래정지해제"(실측: 액면병합에 따른 변경상장 등 절차적 사유로 정지가
+    풀렸다는 공시)·"정지및정지해제" 통합공시처럼 "해제"가 들어간 제목은 제외한다 -
+    거래가 막혔다는 신호가 아니라 풀렸다는 신호라 긴급확인과 맞지 않는데, 단순
+    '%거래정지%' 키워드만으로는 구분이 안 됐었다(실측: 이스트에이드가 정확히 이
+    경우로 긴급확인에 떴음 - 09-18 거래정지'해제' 공시)."""
     cur.execute(
         f"""
         INSERT INTO mart.change_events
@@ -677,6 +686,7 @@ def rule_d8(cur, review_date: str, base_score: int) -> int:
         WHERE {_NEW_EVENT_WHERE_SQL}
           AND (d.report_nm_clean ILIKE '%%거래정지%%' OR d.report_nm_clean ILIKE '%%회생절차%%'
                OR d.report_nm_clean ILIKE '%%부도%%')
+          AND d.report_nm_clean NOT ILIKE '%%해제%%'
         """,
         {"rd": review_date, "base": base_score, "lookback": FIRST_REVIEW_LOOKBACK_DAYS},
     )
