@@ -113,19 +113,25 @@
   .panel { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .panel-title { font-size: 13.5px; font-weight: 700; }
+  .unit-note { font-size: 11px; color: var(--text-muted); font-weight: 500; }
   .legend { display: flex; gap: 12px; flex-wrap: wrap; }
   .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); }
   .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 
   /* 가독성 개선: 행 간격 넉넉하게(12px) + 구분선, 기업명/점수 글자 키움(14px) */
-  .rank-row { display: flex; align-items: center; gap: 14px; padding: 12px 8px; border-bottom: 1px solid var(--grid); }
+  /* 좁은 사이드 패널(3단 그리드)이라 기업명+배지+점수를 한 줄에 다 넣으면 이름이 길거나
+     "외 N건" 배지가 붙을 때 막대/사유 텍스트가 밀려서 깨진다 - 1줄(순위·이름·배지·점수)
+     + 2줄(막대) + 3줄(사유)로 세로로 쌓아서 가로 폭 경합 자체를 없앤다. */
+  .rank-row { display: flex; flex-direction: column; gap: 6px; padding: 12px 8px; border-bottom: 1px solid var(--grid); }
   .rank-row:last-child { border-bottom: none; }
   .rank-row[data-corp] { cursor: pointer; border-radius: 8px; }
   .rank-row[data-corp]:hover { background: var(--muted-bg); }
-  .rank-name { width: 108px; flex-shrink: 0; font-size: 14px; font-weight: 700; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rank-track { flex: 1; height: 18px; background: var(--muted-bg); border-radius: 5px; position: relative; overflow: hidden; }
+  .rank-top { display: flex; align-items: center; gap: 8px; }
+  .rank-order { flex-shrink: 0; font-size: 11.5px; font-weight: 700; color: var(--text-muted); }
+  .rank-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-track { height: 10px; background: var(--muted-bg); border-radius: 5px; position: relative; overflow: hidden; }
   .rank-fill { height: 100%; border-radius: 5px 0 0 5px; }
-  .rank-score { width: 34px; flex-shrink: 0; font-size: 14px; font-weight: 700; text-align: left; }
+  .rank-score { flex-shrink: 0; font-size: 14px; font-weight: 700; }
 
   /* 한글 표 셀이 좁을 때 "호\n텔\n신\n라"처럼 글자 단위로 깨지는 문제 방지 —
      단어 단위로만 줄바꿈하고, 그래도 넘치면 .table-wrap의 가로 스크롤로 처리. */
@@ -301,7 +307,7 @@
         <div class="panel summary-card" id="sel-summary"></div>
       </div>
       <div class="grid-2">
-        <div class="panel"><div class="panel-head"><div class="panel-title" id="fin-top-title">주요 재무 변화</div></div><div class="table-wrap"><table id="fin-top-table"></table></div></div>
+        <div class="panel"><div class="panel-head"><div class="panel-title" id="fin-top-title">주요 재무 변화</div><div class="unit-note">단위: 백만원</div></div><div class="table-wrap"><table id="fin-top-table"></table></div></div>
         <div class="panel"><div class="panel-head"><div class="panel-title" id="corr-top-title">정정 공시</div></div><div class="table-wrap"><table id="corr-top-table"></table></div></div>
       </div>
       <div class="panel">
@@ -327,7 +333,7 @@
           <div><div class="section-title-main">전년동기 재무 비교 (YoY)</div><div class="section-title-sub">검토일과 무관 — 최신 사업연도 vs 직전 사업연도. "같은 보고서 유형끼리" 비교.</div></div>
         </div>
         <div class="grid-2">
-          <div class="panel"><div class="panel-head"><div class="panel-title">주요 재무 변화</div></div><div class="table-wrap"><table id="detail-fin-table"></table></div></div>
+          <div class="panel"><div class="panel-head"><div class="panel-title">주요 재무 변화</div><div class="unit-note">단위: 백만원</div></div><div class="table-wrap"><table id="detail-fin-table"></table></div></div>
           <div class="panel"><div class="panel-head"><div class="panel-title">적용된 Rule</div></div><div style="display:flex; flex-direction:column; gap:8px;" id="detail-rules"></div></div>
         </div>
         <div class="panel">
@@ -378,6 +384,11 @@
   "use strict";
   let DATA = null;
   const fmtNum = (n) => n == null ? "—" : Math.round(n).toLocaleString("ko-KR");
+  // 은행권 표기 관행(쉼표 단위 = 백만원) - 30,000,000,000원을 "30,000"(단위 백만원)으로.
+  // 주요 재무 변화 표에서만 쓰고, 분기 차트(fmtEok, 억원 단위)·정확한 원 단위 툴팁(fmtNum)은 그대로 둔다.
+  const fmtMan = (n) => n == null ? "—" : Math.round(n / 1e6).toLocaleString("ko-KR");
+  // F4(부채비율)는 금액이 아니라 %라서 백만원 환산 대상이 아님 - account_std_name으로 구분.
+  const fmtFin = (name, n) => name === "부채비율" ? (n == null ? "—" : `${fmtNum(n)}%`) : fmtMan(n);
   const fmtPct = (n) => n == null ? "—" : (n >= 0 ? "+" : "") + (n * 100).toFixed(1) + "%";
   const fmtDate = (s) => s ? s.replace(/-/g, ".") : "—";
   const dartUrl = (rcept) => `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rcept}`;
@@ -582,20 +593,25 @@
     return events.slice().sort((a, b) => b.score - a.score)[0].description;
   }
   function renderRankChart() {
-    const ranked = DATA.company_priority.slice().sort((a, b) => b.priority_score - a.priority_score);
+    // 긴급확인은 점수와 무관하게 항상 최우선 - 숫자만으로 정렬하면 "긴급확인(7점)"이
+    // "높음(9점)" 밑으로 내려가는 모순이 생긴다(스펙 8번 원칙과 어긋남).
+    const ranked = DATA.company_priority.slice().sort((a, b) => (b.is_emergency - a.is_emergency) || (b.priority_score - a.priority_score));
     const max = Math.max(1, ...ranked.map((r) => r.priority_score));
-    document.getElementById("rank-chart").innerHTML = ranked.map((r) => {
+    document.getElementById("rank-chart").innerHTML = ranked.map((r, i) => {
       const pct = Math.max(6, (r.priority_score / max) * 100);
-      const scoreLabel = r.priority_level === "none" ? "변화없음" : r.priority_score;
+      // "10", "9"처럼 숫자만 보이면 "순위"로 오해할 수 있어 "점"을 붙이고, 진짜 순위는
+      // 왼쪽에 "1위"로 따로 표시한다 — 둘을 섞어 읽을 여지를 없앤다.
+      const scoreLabel = r.priority_level === "none" ? "변화없음" : `${r.priority_score}점`;
       const reason = topReason(r.corp_code);
       return `<div class="rank-row" data-corp="${r.corp_code}" title="클릭하면 이 기업 상세 분석으로 이동">
-          <div class="rank-name">${esc(r.corp_name)}</div>
-          <div style="flex:1; min-width:0;">
-            <div class="rank-track"><div class="rank-fill" style="width:${pct}%; background:${levelColor[r.priority_level]}"></div></div>
-            ${reason ? `<div class="reason-sub" title="${esc(reason)}">${esc(reason)}</div>` : ""}
+          <div class="rank-top">
+            <div class="rank-order num">${i + 1}위</div>
+            <div class="rank-name">${esc(r.corp_name)}</div>
+            ${additionalEventsTagHtml(r)}
+            <div class="rank-score num">${scoreLabel}</div>
           </div>
-          <div style="display:flex; gap:4px; align-items:center;">${additionalEventsTagHtml(r)}</div>
-          <div class="rank-score num" style="width:auto; font-size:10.5px;">${scoreLabel}</div>
+          <div class="rank-track"><div class="rank-fill" style="width:${pct}%; background:${levelColor[r.priority_level]}"></div></div>
+          ${reason ? `<div class="reason-sub" title="${esc(reason)}">${esc(reason)}</div>` : ""}
         </div>`;
     }).join("");
   }
@@ -660,7 +676,7 @@
   function renderFinTop() {
     const items = DATA.change_events.filter((e) => e.change_type === "financial").slice().sort((a, b) => b.score - a.score || Math.abs(b.change_rate || 0) - Math.abs(a.change_rate || 0));
     document.getElementById("fin-top-title").textContent = `주요 재무 변화 (전체 ${items.length}건)`;
-    const rows = items.map((e) => `<tr><td class="name-cell">${esc(e.corp_name)}</td><td>${esc(e.account_std_name || "")}</td><td class="num-cell">${fmtNum(e.old_value)}</td><td class="num-cell">${fmtNum(e.new_value)}</td><td class="num-cell">${financialChangeCell(e.rule_id, e.change_rate != null ? e.change_rate / 100 : null, e.direction)}</td><td>${ruleChipHtml(e.rule_id, e.direction)}</td></tr>`).join("");
+    const rows = items.map((e) => `<tr><td class="name-cell">${esc(e.corp_name)}</td><td>${esc(e.account_std_name || "")}</td><td class="num-cell">${fmtFin(e.account_std_name, e.old_value)}</td><td class="num-cell">${fmtFin(e.account_std_name, e.new_value)}</td><td class="num-cell">${financialChangeCell(e.rule_id, e.change_rate != null ? e.change_rate / 100 : null, e.direction)}</td><td>${ruleChipHtml(e.rule_id, e.direction)}</td></tr>`).join("");
     document.getElementById("fin-top-table").innerHTML = `<thead><tr><th>기업</th><th>지표</th><th>이전</th><th>최신</th><th>변화</th><th>Rule</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty-note">탐지된 재무 변화 없음</td></tr>'}</tbody>`;
   }
   function renderCorrTop() {
@@ -893,7 +909,7 @@
       const rate = (r.frmtrm_amount && r.frmtrm_amount !== 0) ? (r.thstrm_amount - r.frmtrm_amount) / r.frmtrm_amount : null;
       const rule = ruleByAccount[r.account_std_name];
       const dir = rule ? ruleDirectionFor(corpCode, rule) : null;
-      return `<tr><td class="name-cell">${esc(r.account_std_name)}</td><td class="num-cell">${fmtNum(r.frmtrm_amount)}</td><td class="num-cell">${fmtNum(r.thstrm_amount)}</td><td class="num-cell">${financialChangeCell(rule, rate, dir)}</td><td>${rule ? ruleChipHtml(rule, dir) : '<span style="color:var(--text-muted);font-size:11px;">—</span>'}</td></tr>`;
+      return `<tr><td class="name-cell">${esc(r.account_std_name)}</td><td class="num-cell">${fmtMan(r.frmtrm_amount)}</td><td class="num-cell">${fmtMan(r.thstrm_amount)}</td><td class="num-cell">${financialChangeCell(rule, rate, dir)}</td><td>${rule ? ruleChipHtml(rule, dir) : '<span style="color:var(--text-muted);font-size:11px;">—</span>'}</td></tr>`;
     }).join("");
     document.getElementById("detail-fin-table").innerHTML = `<thead><tr><th>지표</th><th>이전(${(byAccount.REVENUE&&(byAccount.REVENUE.bsns_year-1))||''})</th><th>최신(${(byAccount.REVENUE&&byAccount.REVENUE.bsns_year)||''})</th><th>변화</th><th>적용 Rule</th></tr></thead><tbody>${finRows || '<tr><td colspan="5" class="empty-note">재무 데이터 없음</td></tr>'}</tbody>`;
 
