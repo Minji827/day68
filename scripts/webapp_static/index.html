@@ -929,21 +929,19 @@
     });
 
     // v4.6: 영업이익률/순이익률은 막대 대신 꺾은선(우축)으로 매출 막대 위에 겹쳐 그린다.
-    // 선은 분기 그룹 안에서만 이어진다(1분기 23 -> 24 -> 25). 그룹을 건너뛰며 잇지 않는
-    // 건 2025년 1분기와 2023년 2분기를 잇는 선분이 아무 의미도 없기 때문.
+    // 선은 분기 그룹을 가로질러 차트 전체를 한 줄로 관통한다 - 그룹마다 끊어 놓으면
+    // 조각이 너무 짧아 추세가 안 읽힌다는 피드백.
     function marginSeries(key, color) {
       let out = "";
-      groups.forEach((_, gi) => {
-        const pts = geoms.filter((p) => p.gi === gi);
-        for (let i = 0; i < pts.length - 1; i++) {
-          const a = pts[i], b = pts[i+1];
-          if (a[key] == null || b[key] == null) continue;   // 미공시 구간은 선을 끊는다
-          out += `<line x1="${a.cx}" y1="${yPct(a[key])}" x2="${b.cx}" y2="${yPct(b[key])}" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>`;
-        }
-        pts.forEach((p) => {
-          if (p[key] == null) return;
-          out += `<rect x="${p.cx-3.2}" y="${yPct(p[key])-3.2}" width="6.4" height="6.4" rx="1" fill="${color}" stroke="var(--surface)" stroke-width="1"/>`;
-        });
+      // 그룹 경계에서 끊지 않고 왼쪽 끝 슬롯부터 오른쪽 끝까지 한 줄로 잇는다.
+      // 미공시 슬롯은 건너뛰고 그 양옆을 바로 연결 - 선이 조각나면 추세가 안 보인다.
+      const pts = geoms.filter((p) => p[key] != null);
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i+1];
+        out += `<line x1="${a.cx}" y1="${yPct(a[key])}" x2="${b.cx}" y2="${yPct(b[key])}" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>`;
+      }
+      pts.forEach((p) => {
+        out += `<rect x="${p.cx-3.2}" y="${yPct(p[key])-3.2}" width="6.4" height="6.4" rx="1" fill="${color}" stroke="var(--surface)" stroke-width="1"/>`;
       });
       return out;
     }
