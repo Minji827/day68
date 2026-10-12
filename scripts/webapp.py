@@ -193,14 +193,16 @@ def analyze(req: AnalyzeRequest):
 
     step("재무제표 수집 중...")
     curr_year = date.today().year
-    years = [str(curr_year - 1), str(curr_year)]
+    # v4.4-1: 분기 차트를 12분기(3개년) 연속 타임라인으로 보여달라는 요청 - 올해/작년
+    # 2개년만으로는 1개년(4분기)밖에 "온전한 전년" 데이터가 안 나와서 재작년까지 받는다.
+    years = [str(curr_year - 2), str(curr_year - 1), str(curr_year)]
     collect.collect_financials(corp_code, years)  # 사업보고서(연간) - 기본 reprt_code
-    step("분기별 재무제표 수집 중 (1분기/반기/3분기보고서, 작년+올해)...")
-    # 작년도 올해와 똑같이 1/2/3분기보고서를 따로 수집해야 한다 - 올해 보고서의
+    step("분기별 재무제표 수집 중 (1분기/반기/3분기보고서, 최근 3개년)...")
+    # 각 연도가 그 해 자체의 1/2/3분기보고서를 따로 수집해야 한다 - 올해 보고서의
     # "전년동기" 비교 필드만 믿으면, 올해 아직 안 올라온 분기(3·4분기)만큼 작년도
-    # 같이 비어버린다. 작년은 이미 다 지난 해라 4개 보고서가 전부 있는 게 정상이므로
-    # 작년 몫은 작년 자체 보고서에서 받아야 "작년 건 항상 전부" 나온다.
-    for yr in (curr_year, curr_year - 1):
+    # 같이 비어버린다. 지난 연도는 이미 다 지난 해라 4개 보고서가 전부 있는 게
+    # 정상이므로, 그 해 몫은 그 해 자체 보고서에서 받아야 "항상 전부" 나온다.
+    for yr in (curr_year, curr_year - 1, curr_year - 2):
         for reprt_code in ("11013", "11012", "11014"):
             collect.collect_financials(corp_code, [str(yr)], reprt_code=reprt_code)
 
@@ -228,7 +230,12 @@ def analyze(req: AnalyzeRequest):
             load_core.load_rate_observations(cur)
 
             step("분기별 순수값 계산 중 (누적치 차감)...")
+            # derive_quarters(년)는 "그 해 + 그 해의 전년" 2개년을 뽑는다 - curr_year와
+            # curr_year-1 두 번 호출하면 겹치는 중간 연도(curr_year-1) 없이 3개년
+            # (curr_year-2 ~ curr_year)이 전부 채워진다(서로 다른 bsns_year 행이라
+            # upsert 충돌 없음).
             n_q = quarterly.derive_quarters(cur, corp_code, str(curr_year))
+            n_q += quarterly.derive_quarters(cur, corp_code, str(curr_year - 1))
             step(f"  core.quarterly_financials: {n_q}건")
 
             step("변화 탐지 규칙 실행 중...")
