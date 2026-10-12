@@ -188,7 +188,10 @@ IS_ONLY_STD_CODES = {"NET_INCOME"}
 # 버그와 같은 종류) - REVENUE는 합산 대상이 아니라 "동의어 중 하나만" 골라야 한다.
 # 우선순위 목록: 먼저 오는 이름이 이미 값을 채웠으면 나중 동의어는 무시, 나중에 더
 # 우선순위 높은 이름이 오면 덮어쓴다(순서 무관하게 항상 '매출액' 승리).
-EXCLUSIVE_STD_CODE_PRIORITY = {"REVENUE": ("매출액", "영업수익")}
+# v4.4-3: 한화솔루션처럼 IS 없이 CIS만 공시하는 기업은 "수익(매출액)"을 쓴다 - 세
+# 번째 동의어로 추가(매출액/영업수익보다 낮은 우선순위, 셋이 동시에 나오는 사례는
+# 아직 실측 안 됐지만 안전하게 순서를 둠).
+EXCLUSIVE_STD_CODE_PRIORITY = {"REVENUE": ("매출액", "영업수익", "수익(매출액)")}
 
 
 def load_financial_accounts(cur, corp_code: str | None = None) -> None:

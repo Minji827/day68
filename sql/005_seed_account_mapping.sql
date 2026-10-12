@@ -17,9 +17,14 @@
 -- 이었음). 다만 SK스퀘어는 같은 보고서에 "매출액"과 "영업수익"을 같은 금액으로 둘 다
 -- 공시해서, 이 둘을 합산하면 매출이 2배로 뻥튀기된다(scripts/load_core.py의
 -- EXCLUSIVE_STD_CODE_PRIORITY가 "매출액" 우선으로 하나만 골라 처리 — 합산 안 함).
+-- v4.4-3: 수익(매출액) 추가 — 한화솔루션은 손익계산서(IS)를 따로 안 두고 포괄손익
+--계산서(CIS) 하나로만 공시하는데, 그 안의 매출 줄 계정명이 "수익(매출액)"이라 기존
+-- 두 변형(매출액/영업수익) 어느 쪽에도 안 걸려서 REVENUE가 통째로 비어 있었다(실측:
+-- 2025년 전체 분기 REVENUE 0건). 우선순위는 세 번째(매출액/영업수익 우선 유지).
 INSERT INTO core.account_mapping (account_nm_raw, account_std_code, account_std_name, agg_method) VALUES
     ('매출액',                   'REVENUE',        '매출액',          'direct'),
     ('영업수익',                 'REVENUE',        '매출액',          'direct'),
+    ('수익(매출액)',              'REVENUE',        '매출액',          'direct'),
     ('영업이익',                 'OP_INCOME',      '영업이익',         'direct'),
     ('영업이익(손실)',            'OP_INCOME',      '영업이익',         'direct'),
     ('부채총계',                 'TOTAL_LIAB',     '부채총계',         'direct'),
