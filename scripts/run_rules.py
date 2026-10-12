@@ -935,6 +935,31 @@ def aggregate_company_priority(cur, review_date: str) -> None:
     )
     print(f"mart.company_priority: {cur.rowcount}개 기업 집계")
 
+    # 위 INSERT는 이번 review_date에 change_events가 1건이라도 있는 기업만 넣는다 -
+    # 이벤트가 0건인 기업은 그냥 조용히 빠진다. 이걸 예전엔 webapp.py의 /api/analyze가
+    # (기업 1개씩) 별도로 땜질해서 막았는데, run_rules.py를 CLI로 직접 돌릴 때는 그
+    # 땜질이 없어서 이벤트 0건 기업이 그 실행에서는 계속 빠졌다(실측: LG전자·LG이노텍이
+    # company_priority에서 통째로 사라져 있었음 - PowerBI CSV에서 회사 수가 안 맞는 걸로
+    # 발견). 호출 경로(CLI vs API)와 무관하게 항상 "전체 기업 중 이번에 검토 안 된 쪽만"
+    # 'none'으로 채워서, 여기 한 곳에서만 보장하도록 통합한다.
+    cur.execute(
+        """
+        INSERT INTO mart.company_priority
+            (corp_code, corp_name, review_date, priority_level, priority_score,
+             change_count, financial_rule_count, disclosure_rule_count)
+        SELECT c.corp_code, c.corp_name, %(rd)s, 'none', 0, 0, 0, 0
+        FROM core.companies c
+        WHERE NOT EXISTS (
+            SELECT 1 FROM mart.company_priority mp
+            WHERE mp.corp_code = c.corp_code AND mp.review_date = %(rd)s
+        )
+        ON CONFLICT (corp_code, review_date) DO NOTHING
+        """,
+        {"rd": review_date},
+    )
+    if cur.rowcount:
+        print(f"mart.company_priority: 변화 없는 {cur.rowcount}개 기업 'none'으로 채움")
+
 
 def aggregate_kpi(cur, review_date: str) -> None:
     # v4.3-1: new_disclosures/corrections도 D-rule과 같은 "기업별 직전 검토일" 기준으로

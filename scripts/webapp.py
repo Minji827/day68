@@ -252,23 +252,16 @@ def analyze(req: AnalyzeRequest):
             run_rules.aggregate_company_priority(cur, req.review_date)
             run_rules.aggregate_kpi(cur, req.review_date)
 
-            # 변화가 0건이면 aggregate_company_priority가 아예 행을 안 만든다 -
-            # "유의미한 변화 없음"으로 명시적으로 표시한다 (PRD 예외 처리, 조용히 사라지면 안 됨).
+            # 변화 0건이어도 "유의미한 변화 없음"으로 명시 표시해야 한다(PRD 예외 처리,
+            # 조용히 사라지면 안 됨) - 이 보장은 run_rules.aggregate_company_priority()
+            # 안에서 전체 기업 공통으로 처리한다(이전엔 여기서 기업 1개씩 따로 땜질
+            # 했었는데, CLI로 run_rules.py를 직접 돌릴 땐 이 땜질이 없어서 이벤트 0건
+            # 기업이 company_priority에서 통째로 빠지는 버그가 있었음 - 한 곳으로 통합).
             cur.execute(
-                "SELECT 1 FROM mart.company_priority WHERE corp_code = %s AND review_date = %s",
+                "SELECT 1 FROM mart.change_events WHERE corp_code = %s AND review_date = %s",
                 (corp_code, req.review_date),
             )
             if not cur.fetchone():
-                cur.execute(
-                    """
-                    INSERT INTO mart.company_priority
-                        (corp_code, corp_name, review_date, priority_level, priority_score,
-                         change_count, financial_rule_count, disclosure_rule_count)
-                    VALUES (%s, %s, %s, 'none', 0, 0, 0, 0)
-                    ON CONFLICT (corp_code, review_date) DO NOTHING
-                    """,
-                    (corp_code, corp["corp_name"], req.review_date),
-                )
                 step(f"  {corp['corp_name']}: 이 검토일 기준 유의미한 변화 없음")
 
             if os.environ.get("OPENAI_API_KEY"):
