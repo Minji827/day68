@@ -223,6 +223,14 @@
   .toggle-btn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
   .toggle-btn.on { background: var(--brand); border-color: var(--brand); color: #fff; }
   .toggle-btn.on .dot { background: #fff; }
+  .csv-actions { display: flex; gap: 6px; }
+  .csv-btn {
+    font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary);
+    text-decoration: none; cursor: pointer; white-space: nowrap;
+  }
+  .csv-btn:hover { border-color: var(--brand); color: var(--text-primary); }
+
   .chart-stage { position: relative; }
   .chart-stage svg { cursor: crosshair; touch-action: none; display: block; width: 100%; }
   .chart-tip { position: absolute; pointer-events: none; z-index: 2; background: var(--surface-raised); border: 1px solid var(--border);
@@ -334,7 +342,7 @@
           <div class="page-tagline">전체를 다시 읽지 말고, 이번에 달라진 것부터.</div>
         </div>
         <div class="filters">
-          <div class="filter"><label>검토 기준일</label><input id="f-review-date" type="text" readonly></div>
+          <div class="filter"><label>검토 기준일</label><select id="f-review-date" title="과거 검토 회차를 고르면 그 시점 결과를 다시 봅니다"></select></div>
           <div class="filter"><label>기업</label><select id="f-corp"><option value="all">전체</option></select></div>
         </div>
       </div>
@@ -370,7 +378,7 @@
     <section class="view" id="view-detail">
       <div class="page-header">
         <div><div class="page-title">기업 상세 분석</div><div class="page-tagline">선택한 기업의 변경사항을 상세히 확인할 수 있습니다.</div></div>
-        <div class="filters"><div class="filter"><label>기업 선택</label><select id="d-corp" class="company-select"></select></div><div class="filter"><label>검토 기준일</label><input id="d-review-date" type="text" readonly></div></div>
+        <div class="filters"><div class="filter"><label>기업 선택</label><select id="d-corp" class="company-select"></select></div><div class="filter"><label>검토 기준일</label><select id="d-review-date" title="과거 검토 회차를 고르면 그 시점 결과를 다시 봅니다"></select></div></div>
       </div>
       <div class="detail-banner" id="detail-banner"></div>
 
@@ -386,8 +394,17 @@
         <div class="panel">
           <div class="panel-head">
             <div class="panel-title">분기별 지표 추이 (분기별 3개년 비교)</div>
+            <div class="csv-actions">
+              <a class="csv-btn" id="q-csv-one" download>이 기업 CSV</a>
+              <a class="csv-btn" id="q-csv-all" href="/api/export/quarterly.csv" download>전체 기업 CSV</a>
+            </div>
           </div>
           <div id="slope-chart"></div>
+          <div class="chart-hint" style="margin-top:6px;">
+            Power BI용 — 미공시 분기도 빈 행으로 들어가서 3개년 12분기가 항상 채워집니다
+            (<code>is_disclosed</code>로 구분). 축 정렬은 <code>period_sort</code>,
+            분기끼리 묶어 비교할 땐 <code>quarter_label</code>을 쓰세요.
+          </div>
         </div>
       </div>
 
@@ -548,6 +565,13 @@
     return m;
   }
 
+  // 기업별 신규/정정 공시 건수 - 예전엔 공시 전건을 받아서 매번 filter().length로
+  // 셌는데(기업 2개에 200행), 서버가 GROUP BY로 집계한 걸 그대로 쓴다.
+  function disclosureCounts(corpCode) {
+    const row = (DATA.disclosure_summary || []).find((d) => d.corp_code === corpCode);
+    return row || { new_count: 0, correction_count: 0 };
+  }
+
   function renderCompanyChips() {
     const el = document.getElementById("company-chips");
     if (!DATA || !DATA.companies.length) { el.innerHTML = ""; return; }
@@ -574,6 +598,23 @@
     });
   }
 
+  // v4.7: "검토 기준일"이 읽기 전용 표시칸 두 개였다 - mart의 모든 테이블이
+  // review_date로 키를 잡고 /api/dashboard도 ?review_date=를 이미 받는데, 화면에서는
+  // 항상 가장 최근 회차만 볼 수 있었다. "마지막 검토 이후 달라진 것"이 이 제품의
+  // 전부인데 정작 그 검토 회차를 고를 방법이 없었던 셈. 드롭다운으로 바꾼다.
+  // 두 화면(전체/상세)의 선택이 항상 같이 움직이도록 한쪽을 바꾸면 양쪽 다 갱신한다.
+  function renderReviewDatePickers(current) {
+    const dates = (DATA.review_dates && DATA.review_dates.length) ? DATA.review_dates : [current];
+    const opts = dates.map((d) =>
+      `<option value="${d}"${d === current ? " selected" : ""}>${fmtDate(d)}</option>`).join("");
+    ["f-review-date", "d-review-date"].forEach((id) => {
+      const el = document.getElementById(id);
+      el.innerHTML = opts;
+      el.value = current;
+      el.onchange = () => loadDashboard(el.value);
+    });
+  }
+
   function renderAll() {
     const oldBanner = document.getElementById("js-error-banner");
     if (oldBanner) oldBanner.remove();
@@ -584,12 +625,13 @@
       ["rank-table","rank-filter-chips","rank-pg-note","rank-pg-btns","sel-summary","fin-top-table","corr-top-table","dist-chart","detail-banner","detail-fin-table","detail-rules","slope-chart","detail-new-table","detail-corr-table","ai-explain","detail-macro"].forEach(id => document.getElementById(id).innerHTML = "");
       document.getElementById("f-corp").innerHTML = '<option value="all">전체</option>';
       document.getElementById("d-corp").innerHTML = "";
+      document.getElementById("f-review-date").innerHTML = "";
+      document.getElementById("d-review-date").innerHTML = "";
       return;
     }
     const cbid = companyById();
     const reviewDate = DATA.review_date || (DATA.kpi_daily[0] && DATA.kpi_daily[0].review_date) || DATA.company_priority[0].review_date;
-    document.getElementById("f-review-date").value = fmtDate(reviewDate);
-    document.getElementById("d-review-date").value = fmtDate(reviewDate);
+    renderReviewDatePickers(reviewDate);
 
     const corpSelect = document.getElementById("f-corp");
     corpSelect.innerHTML = '<option value="all">전체</option>' + DATA.company_priority.map(cp => `<option value="${cp.corp_code}">${esc(cp.corp_name)}</option>`).join("");
@@ -615,8 +657,11 @@
   // ②긴급확인 ③금리 영향 재확인 기업 수(3단계 ECOS) ④신규·정정 공시 건수. 기존
   // "변화 발생 기업 수"/"재무 변화 이벤트 수"는 히어로 블록이 그 역할을 대신하므로 뺌.
   function renderKPIs() {
-    const nonCorrection = DATA.disclosures.filter((d) => !d.is_correction).length;
-    const corrections = DATA.disclosures.filter((d) => d.is_correction).length;
+    // v4.7: 공시 전건을 받아서 브라우저가 세던 걸 서버 집계로 교체(의미는 동일 -
+    // 적재된 공시 전체를 신규/정정으로 나눈 수).
+    const totals = DATA.disclosure_totals || { new_count: 0, correction_count: 0 };
+    const nonCorrection = totals.new_count;
+    const corrections = totals.correction_count;
     const needsReview = DATA.company_priority.filter((c) => ["emergency", "high"].includes(c.priority_level)).length;
     const emergencyCount = DATA.company_priority.filter((c) => c.priority_level === "emergency").length;
     const kpiDaily = (DATA.kpi_daily || [])[0] || {};
@@ -766,8 +811,8 @@
       </div>
       <div class="summary-stats">
         <div class="row"><span>대표 사건 점수 (1~10, 등급 내 순서용)</span><b>${cp.priority_score ?? "—"}점</b></div>
-        <div class="row"><span>신규 공시</span><b>${DATA.disclosures.filter(d=>d.corp_code===cp.corp_code && !d.is_correction).length}건</b></div>
-        <div class="row"><span>정정 공시</span><b>${DATA.disclosures.filter(d=>d.corp_code===cp.corp_code && d.is_correction).length}건</b></div>
+        <div class="row"><span>신규 공시</span><b>${disclosureCounts(cp.corp_code).new_count}건</b></div>
+        <div class="row"><span>정정 공시</span><b>${disclosureCounts(cp.corp_code).correction_count}건</b></div>
         <div class="row"><span>재무 변화</span><b>${cp.financial_rule_count}건</b></div>
       </div>
       <div class="summary-rules">${rules.map((r) => ruleChipHtml(r, ruleDirectionFor(cp.corp_code, r))).join("")}</div>`;
@@ -784,7 +829,8 @@
     document.getElementById("fin-top-table").innerHTML = `<thead><tr><th>기업</th><th>지표</th><th>이전</th><th>최신</th><th>변화</th><th>Rule</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty-note">탐지된 재무 변화 없음</td></tr>'}</tbody>`;
   }
   function renderCorrTop() {
-    const items = DATA.disclosures.filter((d) => d.is_correction).slice().sort((a, b) => b.rcept_dt.localeCompare(a.rcept_dt)).slice(0, 8);
+    // v4.7: 서버가 이미 "최근 N건"으로 잘라서 준다(예전엔 전건을 받아서 정렬 후 slice).
+    const items = DATA.recent_corrections || [];
     document.getElementById("corr-top-title").textContent = `정정 공시 (최근 ${items.length}건)`;
     const rows = items.map((d) => `<tr><td class="name-cell">${esc(d.corp_name)}</td><td>${esc(d.report_nm_clean)}</td><td class="num-cell">${fmtDate(d.rcept_dt)}</td><td>${d.orig_rcept_no ? '<span class="badge badge-low">원공시 연결</span>' : '<span class="badge badge-none">정정 전 공시 없음</span>'}</td><td><a class="dart-link" href="${dartUrl(d.rcept_no)}" target="_blank" rel="noopener">원문 ↗</a></td></tr>`).join("");
     document.getElementById("corr-top-table").innerHTML = `<thead><tr><th>기업</th><th>공시명</th><th>정정일</th><th>연결 상태</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty-note">정정 공시 없음</td></tr>'}</tbody>`;
@@ -798,8 +844,8 @@
     }).join("");
   }
 
-  function latestFinancials(corpCode) {
-    const rows = DATA.financial_accounts.filter((f) => f.corp_code === corpCode);
+  function latestFinancials(detail) {
+    const rows = detail.financial_accounts || [];
     const byAccount = {};
     rows.forEach((r) => {
       const key = r.account_std_code, cur = byAccount[key];
@@ -822,9 +868,9 @@
   // 0%"와 "계산 불가"가 섞여 보인다.
   const marginOf = (num, rev) => (num == null || rev == null || rev === 0) ? null : (num / rev) * 100;
 
-  function renderQuarterlyChart(corpCode) {
+  function renderQuarterlyChart(detail) {
     const host = document.getElementById("slope-chart");
-    const qRows = (DATA.quarterly_financials || []).filter((q) => q.corp_code === corpCode);
+    const qRows = detail.quarterly_financials || [];
 
     if (!qRows.length) {
       host.innerHTML = '<div class="empty-note">분기별 데이터 없음 — 이 기업을 다시 분석하면 1·2분기(또는 그 이상) 보고서가 공시된 만큼 채워집니다.</div>';
@@ -1024,26 +1070,43 @@
     svgEl.addEventListener("touchstart", (e) => { if (e.touches[0]) showAt(e.touches[0].clientX); }, { passive: true });
   }
 
-  function renderDetail(corpCode) {
+  // v4.7: 상세 데이터를 그 시점에 /api/company/{corp_code}로 받아오므로 async가 됐다.
+  // change_events만 대시보드 응답에서 그대로 쓴다(상세 응답에 중복으로 담지 않는다).
+  async function renderDetail(corpCode) {
     const cp = DATA.company_priority.find((c) => c.corp_code === corpCode);
     const co = companyById()[corpCode];
     if (!cp || !co) return;
+
+    let detail;
+    try {
+      detail = await loadCompany(corpCode);
+    } catch (err) {
+      showError("renderDetail", err);
+      return;
+    }
+    // 불러오는 사이에 사용자가 다른 기업을 골랐으면 늦게 도착한 응답으로 화면을
+    // 덮어쓰지 않는다(드롭다운을 빠르게 넘기면 순서가 뒤바뀌어 도착할 수 있다).
+    if (document.getElementById("d-corp").value !== corpCode) return;
+
     const events = DATA.change_events.filter((e) => e.corp_code === corpCode);
     const rules = [...new Set(events.map((e) => e.rule_id))].sort();
-    const newDiscl = DATA.disclosures.filter((d) => d.corp_code === corpCode && !d.is_correction).sort((a,b)=>b.rcept_dt.localeCompare(a.rcept_dt));
-    const corrDiscl = DATA.disclosures.filter((d) => d.corp_code === corpCode && d.is_correction).sort((a,b)=>b.rcept_dt.localeCompare(a.rcept_dt));
+    // 표에 뿌릴 "최근 N건"은 서버가 이미 잘라서 준다. 배너/제목의 **전체 건수**는
+    // 대시보드의 서버 집계를 쓴다 - 전건을 받아서 세면 삼성전자 하나가 3,602건이다.
+    const newDiscl = detail.recent_disclosures || [];
+    const corrDiscl = detail.recent_corrections || [];
+    const counts = disclosureCounts(corpCode);
 
     document.getElementById("detail-banner").innerHTML = `
       <div class="summary-id"><span class="corp" style="font-size:17px;">${esc(co.corp_name)}</span><span class="code num">(${co.stock_code})</span><span class="badge ${levelBadgeClass[cp.priority_level]}">${levelLabel[cp.priority_level]}</span>${additionalEventsTagHtml(cp)}</div>
       <div class="divider"></div><div class="stat"><div class="v">${cp.priority_score ?? "—"}점</div><div class="l">대표 사건 점수 (1~10)</div></div>
-      <div class="divider"></div><div class="stat"><div class="v">${newDiscl.length}건</div><div class="l">신규 공시</div></div>
-      <div class="stat"><div class="v">${corrDiscl.length}건</div><div class="l">정정 공시</div></div>
+      <div class="divider"></div><div class="stat"><div class="v">${counts.new_count}건</div><div class="l">신규 공시</div></div>
+      <div class="stat"><div class="v">${counts.correction_count}건</div><div class="l">정정 공시</div></div>
       <div class="stat"><div class="v">${cp.financial_rule_count}건</div><div class="l">재무 변화</div></div>
       <div class="divider"></div><div style="display:flex; gap:5px; flex-wrap:wrap;">${rules.map((r) => ruleChipHtml(r, ruleDirectionFor(corpCode, r))).join("") || '<span class="empty-note">적용된 Rule 없음</span>'}</div>`;
 
     renderMacroCard(cp);
 
-    const byAccount = latestFinancials(corpCode);
+    const byAccount = latestFinancials(detail);
     const order = ["REVENUE", "OP_INCOME", "OCF", "TOTAL_LIAB", "BORROWINGS"];
     const ruleByAccount = {};
     events.filter((e) => e.account_std_name).forEach((e) => { ruleByAccount[e.account_std_name] = e.rule_id; });
@@ -1061,15 +1124,21 @@
       return `<div class="rule-card">${ruleChipHtml(r, ruleDirectionFor(corpCode, r))}<div class="desc">${esc(cat ? cat.description : "")}</div></div>`;
     }).join("") || '<div class="empty-note">적용된 Rule 없음</div>';
 
-    renderQuarterlyChart(corpCode);
+    renderQuarterlyChart(detail);
+    // CSV 링크는 보고 있는 기업을 따라간다("전체 기업"은 고정 URL이라 그대로).
+    document.getElementById("q-csv-one").href =
+      `/api/export/quarterly.csv?corp_code=${encodeURIComponent(corpCode)}`;
+    document.getElementById("q-csv-one").textContent = `${co.corp_name} CSV`;
 
-    document.getElementById("d-new-title").textContent = `신규 공시 목록 (${newDiscl.length}건)`;
-    document.getElementById("detail-new-table").innerHTML = `<thead><tr><th>공시일</th><th>공시명</th><th>접수번호</th><th></th></tr></thead><tbody>${newDiscl.slice(0, 12).map((d) => `<tr><td class="num-cell">${fmtDate(d.rcept_dt)}</td><td>${esc(d.report_nm_clean)}</td><td class="num-cell">${d.rcept_no}</td><td><a class="dart-link" href="${dartUrl(d.rcept_no)}" target="_blank" rel="noopener">원문 ↗</a></td></tr>`).join("") || '<tr><td colspan="4" class="empty-note">없음</td></tr>'}</tbody>`;
+    document.getElementById("d-new-title").textContent =
+      `신규 공시 목록 (전체 ${counts.new_count}건 중 최근 ${newDiscl.length}건)`;
+    document.getElementById("detail-new-table").innerHTML = `<thead><tr><th>공시일</th><th>공시명</th><th>접수번호</th><th></th></tr></thead><tbody>${newDiscl.map((d) => `<tr><td class="num-cell">${fmtDate(d.rcept_dt)}</td><td>${esc(d.report_nm_clean)}</td><td class="num-cell">${d.rcept_no}</td><td><a class="dart-link" href="${dartUrl(d.rcept_no)}" target="_blank" rel="noopener">원문 ↗</a></td></tr>`).join("") || '<tr><td colspan="4" class="empty-note">없음</td></tr>'}</tbody>`;
 
-    document.getElementById("d-corr-title").textContent = `정정 공시 신구 대비 (${corrDiscl.length}건)`;
-    document.getElementById("detail-corr-table").innerHTML = `<thead><tr><th>정정일</th><th>공시명</th><th>원공시 연결</th><th></th></tr></thead><tbody>${corrDiscl.slice(0, 12).map((d) => `<tr><td class="num-cell">${fmtDate(d.rcept_dt)}</td><td>${esc(d.report_nm_clean)}</td><td>${d.orig_rcept_no ? `<span class="badge badge-low">연결됨</span>` : '<span class="badge badge-none">없음</span>'}</td><td><a class="dart-link" href="${dartUrl(d.rcept_no)}" target="_blank" rel="noopener">원문 ↗</a></td></tr>`).join("") || '<tr><td colspan="4" class="empty-note">없음</td></tr>'}</tbody>`;
+    document.getElementById("d-corr-title").textContent =
+      `정정 공시 신구 대비 (전체 ${counts.correction_count}건 중 최근 ${corrDiscl.length}건)`;
+    document.getElementById("detail-corr-table").innerHTML = `<thead><tr><th>정정일</th><th>공시명</th><th>원공시 연결</th><th></th></tr></thead><tbody>${corrDiscl.map((d) => `<tr><td class="num-cell">${fmtDate(d.rcept_dt)}</td><td>${esc(d.report_nm_clean)}</td><td>${d.orig_rcept_no ? `<span class="badge badge-low">연결됨</span>` : '<span class="badge badge-none">없음</span>'}</td><td><a class="dart-link" href="${dartUrl(d.rcept_no)}" target="_blank" rel="noopener">원문 ↗</a></td></tr>`).join("") || '<tr><td colspan="4" class="empty-note">없음</td></tr>'}</tbody>`;
 
-    renderAiExplain(corpCode);
+    renderAiExplain(detail);
     document.getElementById("footer-detail").textContent = `검토 기준일: ${fmtDate((DATA.kpi_daily[0]||{}).review_date)} · 상단에서 다시 분석하면 최신화됩니다.`;
   }
 
@@ -1089,8 +1158,8 @@
   // v4.1 5단계: ①변화(무엇이 바뀌었나, LLM+원문 근거) ②사유(왜 재검토 대상인가,
   // rule_catalog.description) ③확인(추가 확인사항, rule_checklist) 세 블록으로 나눠
   // 보여준다 - 예전엔 세 개를 한 문장으로 합쳐서 구분이 안 됐다(멘토 리뷰).
-  function renderAiExplain(corpCode) {
-    const sentences = (DATA.explanation_sentences || []).filter((s) => s.corp_code === corpCode);
+  function renderAiExplain(detail) {
+    const sentences = detail.explanation_sentences || [];
     const el = document.getElementById("ai-explain");
     if (!sentences.length) { el.innerHTML = '<div class="empty-note">이 기업에 대해 생성된 AI 해설이 없습니다 (OPENAI_API_KEY 설정 후 분석 시 자동 생성됩니다).</div>'; return; }
     const groups = {};
@@ -1110,47 +1179,109 @@
   }
 
   // ---- data loading ----
-  // a-review-date(새 분석 시작용 입력칸)는 여기서 절대 건드리지 않는다 — 항상 실시간(오늘)을
-  // 유지해야 한다. f-review-date/d-review-date는 "지금 보고 있는 분석 결과가 어느 검토일
-  // 기준인지" 표시용이라 DATA.review_date(저장된 마지막 분석 날짜)를 그대로 따른다.
+  // v4.7: /api/dashboard가 DB를 통째로 내려보내던 걸 둘로 나눴다 - 요약은 여기서,
+  // 기업별 상세(공시 전건/재무계정/분기값/AI해설)는 그 기업을 고르는 시점에
+  // /api/company/{corp_code}로 따로 받는다. 받아온 상세는 (기업, 검토일) 키로
+  // 캐시해서 드롭다운을 왔다 갔다 해도 다시 안 받는다.
+  //
+  // a-review-date(새 분석 시작용 입력칸)는 여기서 절대 건드리지 않는다 — 항상
+  // 실시간(오늘)을 유지해야 한다.
+  const detailCache = new Map();
+
+  async function loadCompany(corpCode) {
+    const key = `${corpCode}@${DATA.review_date || ""}`;
+    if (detailCache.has(key)) return detailCache.get(key);
+    const qs = DATA.review_date ? `?review_date=${encodeURIComponent(DATA.review_date)}` : "";
+    const res = await fetch(`/api/company/${encodeURIComponent(corpCode)}${qs}`);
+    if (!res.ok) throw new Error(`기업 상세를 불러오지 못했습니다 (${res.status})`);
+    const detail = await res.json();
+    detailCache.set(key, detail);
+    return detail;
+  }
+
   async function loadDashboard(reviewDate) {
     const url = reviewDate ? `/api/dashboard?review_date=${encodeURIComponent(reviewDate)}` : "/api/dashboard";
     const res = await fetch(url);
     DATA = await res.json();
+    detailCache.clear();   // 검토일이 바뀌면 상세도 그 회차 기준으로 다시 받아야 한다
     renderAll();
   }
 
   // ---- analyze flow ----
+  // v4.7: POST 한 번 던지고 1분을 기다리던 걸 SSE로 바꿨다. 서버는 예전에도 단계마다
+  // step() 로그를 쌓고 있었는데 전부 끝난 뒤에야 한꺼번에 보내줘서, 사용자는 그동안
+  // "분석 중..." 한 줄과 빈 로그창만 봤다. 이제 단계가 끝날 때마다 바로 찍힌다.
+  // 덤으로 "취소"와 경과 시간도 생겼다 - 예전엔 OpenDART가 멈추면 버튼이 영영
+  // disabled로 남았다.
   const btn = document.getElementById("a-run");
   const statusEl = document.getElementById("a-status");
   const logEl = document.getElementById("a-log");
-  btn.addEventListener("click", async () => {
+  let analyzeSource = null;
+  let analyzeTimer = null;
+
+  function endAnalyze() {
+    if (analyzeSource) { analyzeSource.close(); analyzeSource = null; }
+    if (analyzeTimer) { clearInterval(analyzeTimer); analyzeTimer = null; }
+    btn.disabled = false;
+    btn.textContent = "분석 시작";
+  }
+
+  function appendLog(line) {
+    logEl.textContent += (logEl.textContent ? "\n" : "") + line;
+    logEl.scrollTop = logEl.scrollHeight;   // 항상 마지막 줄이 보이게
+  }
+
+  btn.addEventListener("click", () => {
+    // 실행 중이면 같은 버튼이 취소 버튼으로 동작한다.
+    if (analyzeSource) {
+      endAnalyze();
+      statusEl.textContent = "분석을 취소했습니다. (서버에서 이미 끝난 단계는 저장되지 않습니다)";
+      appendLog("— 사용자가 취소함 —");
+      return;
+    }
     const stockCode = document.getElementById("a-stock-code").value.trim();
     const reviewDate = document.getElementById("a-review-date").value;
     if (!/^\d{6}$/.test(stockCode)) { statusEl.textContent = "6자리 종목코드를 입력하세요 (예: 005930)."; return; }
-    btn.disabled = true;
-    statusEl.textContent = `${stockCode} 분석 중... (OpenDART 수집 → DB 적재 → 규칙 → AI 해설, 30초~1분 소요)`;
+
     logEl.textContent = "";
     logEl.classList.add("open");
-    try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stock_code: stockCode, review_date: reviewDate }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        statusEl.textContent = "실패: " + (data.detail || res.statusText);
-      } else {
-        logEl.textContent = data.log.join("\n");
-        statusEl.textContent = `완료: ${data.corp_name} (${stockCode})`;
-        await loadDashboard(reviewDate);
+    btn.textContent = "취소";
+    btn.disabled = false;
+    const startedAt = Date.now();
+    const tick = () => {
+      const secs = Math.floor((Date.now() - startedAt) / 1000);
+      statusEl.textContent = `${stockCode} 분석 중... ${secs}초 경과 (OpenDART 수집 → DB 적재 → 규칙 → AI 해설)`;
+    };
+    tick();
+    analyzeTimer = setInterval(tick, 1000);
+
+    const qs = new URLSearchParams({ stock_code: stockCode });
+    if (reviewDate) qs.set("review_date", reviewDate);
+    analyzeSource = new EventSource(`/api/analyze/stream?${qs}`);
+
+    analyzeSource.onmessage = async (e) => {
+      let ev;
+      try { ev = JSON.parse(e.data); } catch { return; }
+      if (ev.type === "log") {
+        appendLog(ev.message);
+      } else if (ev.type === "error") {
+        appendLog(`실패: ${ev.message}`);
+        statusEl.textContent = "실패: " + ev.message;
+        endAnalyze();
+      } else if (ev.type === "done") {
+        const secs = Math.floor((Date.now() - startedAt) / 1000);
+        endAnalyze();
+        statusEl.textContent = `완료: ${ev.corp_name} (${stockCode}) · ${secs}초`;
+        await loadDashboard(ev.review_date || reviewDate);
       }
-    } catch (e) {
-      statusEl.textContent = "요청 실패: " + e.message;
-    } finally {
-      btn.disabled = false;
-    }
+    };
+    // 서버가 스트림을 끝내면 EventSource는 자동 재연결을 시도한다 - 분석을 통째로
+    // 다시 돌리게 되므로 done/error에서 close() 한 뒤 남은 onerror만 정리한다.
+    analyzeSource.onerror = () => {
+      if (!analyzeSource) return;
+      endAnalyze();
+      statusEl.textContent = "연결이 끊겼습니다. 서버 로그를 확인하세요.";
+    };
   });
 
   // "검토 기준일" 기본값은 고정 날짜가 아니라 실시간(오늘) — loadDashboard가 기존 분석이
