@@ -32,6 +32,7 @@ import load_raw
 import opendart_client
 import quarterly
 import run_rules
+import schema
 
 load_dotenv()
 
@@ -55,9 +56,9 @@ class AnalyzeRequest(BaseModel):
 def on_startup() -> None:
     conn = db.get_conn()
     try:
-        with conn, conn.cursor() as cur:
-            for f in sorted((ROOT / "sql").glob("*.sql")):
-                cur.execute(f.read_text(encoding="utf-8"))
+        # sql/*.sql(현재 스키마, 멱등)은 매 기동마다, sql/migrations/*.sql(일회성
+        # 변형)은 meta.schema_migrations에 기록해 한 번만. scripts/schema.py 참고.
+        schema.apply_all(conn)
     finally:
         conn.close()
 
