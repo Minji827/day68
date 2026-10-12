@@ -30,6 +30,9 @@ TABLES = [
     "dim_company", "dim_date", "dim_rule", "dim_account",
     "fact_disclosure", "fact_financial_change", "fact_rule_hit",
     "fact_priority", "fact_disclosure_diff", "fact_explanation", "fact_base_rate",
+    # 분기별 지표 추이 - 미공시 분기도 행이 들어있다(is_disclosed=false, 값은 빈칸).
+    # 행을 빼면 Power BI 축에 구멍이 생겨 3개년 12분기가 9개로 보인다.
+    "fact_quarterly_financial",
 ]
 
 OUT_DIR = Path(__file__).resolve().parent.parent / "data" / "powerbi_export"

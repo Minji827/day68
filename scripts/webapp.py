@@ -226,7 +226,9 @@ def export_quarterly_csv(corp_code: str | None = None):
         if isinstance(v, bool):
             return "true" if v else "false"
         if key in margin_cols:
-            return f"{float(v):.4f}"
+            # quarterly_grid가 이미 MARGIN_DECIMALS로 반올림해 둔다 - 여기선 자릿수
+            # 표기만 고정(9.1 -> 9.1000)해서 열이 가지런히 보이게 한다.
+            return f"{float(v):.{data_export.MARGIN_DECIMALS}f}"
         if isinstance(v, Decimal):
             return str(int(v)) if v == v.to_integral_value() else str(v)
         return v

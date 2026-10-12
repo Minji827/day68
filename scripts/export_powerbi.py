@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import psycopg2.extras
 
+import data_export
 import db
 from sections import ensure_sections
 
@@ -431,6 +432,39 @@ def sync_fact_explanation(src_cur, dst_cur, corp_code: str) -> None:
     )
 
 
+def sync_fact_quarterly_financial(src_cur, dst_cur, corp_code: str) -> None:
+    """분기별 지표 추이. 격자 채우기는 data_export.quarterly_grid()를 그대로 쓴다.
+
+    화면 차트 / CSV 버튼 / Power BI 세 경로가 **같은 함수**를 거치게 해서 숫자가
+    갈라질 여지를 없앤다 - 특히 "미공시 분기도 행을 만든다"는 규칙은 여기서 빠지면
+    Power BI 축에만 구멍이 생기고 화면에서는 멀쩡해 보여서 발견이 늦는다.
+
+    delete-then-insert: 재분석으로 분기 구성이 바뀌면(예: 3분기 보고서가 새로 올라와
+    미공시 -> 공시) 남는 행이 없어야 한다. ON CONFLICT만으로는 "없어진 분기"가 안 지워짐.
+    """
+    rows = [
+        (
+            r["corp_code"], r["bsns_year"], r["quarter"], r["period_sort"],
+            r["period_label"], r["quarter_label"], r["revenue"], r["op_income"],
+            r["net_income"], r["op_margin_pct"], r["net_margin_pct"], r["is_disclosed"],
+        )
+        for r in data_export.quarterly_grid(src_cur, corp_code)
+    ]
+    dst_cur.execute("DELETE FROM fact_quarterly_financial WHERE corp_code = %s", (corp_code,))
+    if not rows:
+        return
+    psycopg2.extras.execute_values(
+        dst_cur,
+        """
+        INSERT INTO fact_quarterly_financial
+            (corp_code, bsns_year, quarter, period_sort, period_label, quarter_label,
+             revenue, op_income, net_income, op_margin_pct, net_margin_pct, is_disclosed)
+        VALUES %s
+        """,
+        rows,
+    )
+
+
 def sync_company(src_cur, dst_cur, corp_code: str, review_date: str) -> None:
     """한 기업의 현재 상태를 powerbi_db에 통째로 다시 써넣는다 (delete-then-insert
     조합이라 멱등 — webapp.py의 /api/analyze 완료 직후 호출)."""
@@ -440,6 +474,7 @@ def sync_company(src_cur, dst_cur, corp_code: str, review_date: str) -> None:
     sync_dim_company(src_cur, dst_cur, corp_code)
     sync_fact_disclosure(src_cur, dst_cur, corp_code)
     sync_fact_financial_change(src_cur, dst_cur, corp_code)
+    sync_fact_quarterly_financial(src_cur, dst_cur, corp_code)
     sync_fact_rule_hit_and_priority(src_cur, dst_cur, corp_code, review_date)
     sync_fact_disclosure_diff(src_cur, dst_cur, corp_code)
     sync_fact_explanation(src_cur, dst_cur, corp_code)

@@ -143,12 +143,19 @@ def export_dashboard(cur, review_date: str | None = None) -> dict:
 QUARTERLY_ACCOUNTS = ("REVENUE", "OP_INCOME", "NET_INCOME")
 
 
+# 비율 소수 자릿수. 여기서 한 번 반올림해 두면 세 경로(API CSV / powerbi_db의
+# fact_quarterly_financial / 그걸 떠내는 zip CSV)가 전부 같은 숫자를 들고 간다.
+# 안 그러면 API는 4자리, zip은 float 전체 정밀도(52.182325694650835)로 갈려서
+# 같은 분기를 두 파일에서 비교했을 때 값이 달라 보인다.
+MARGIN_DECIMALS = 4
+
+
 def _margin(num, rev):
     """매출이 0/결측이면 비율이 무의미하므로 None - 0%로 두면 "실제로 0%"와 "계산
     불가"가 섞인다(차트의 marginOf와 동일)."""
     if num is None or rev is None or rev == 0:
         return None
-    return float(num) / float(rev) * 100
+    return round(float(num) / float(rev) * 100, MARGIN_DECIMALS)
 
 
 def quarterly_grid(cur, corp_code: str | None = None, require_revenue: bool = False) -> list[dict]:

@@ -124,3 +124,33 @@ CREATE TABLE IF NOT EXISTS fact_base_rate (
     prev_rate  numeric,
     direction  text CHECK (direction IN ('인상', '동결', '인하'))
 );
+
+-- 분기별 지표 추이 (화면 "분기별 지표 추이" 차트와 같은 데이터).
+--
+-- fact_financial_change는 PK가 (corp_code, report_period=연도, account_id, fs_div)라
+-- 연도당 한 행만 받아서 reprt_code='11011'(연간)만 넣는다 - 분기는 그 PK에 안 들어간다.
+-- 그래서 분기 추이를 Power BI에서 그릴 방법이 아예 없었다. 이 테이블이 그 자리를 채운다.
+--
+-- 계정별 long 포맷(account_id 축)이 아니라 분기당 한 행(wide)인 이유: 영업이익률·
+-- 순이익률이 "매출 대비" 비율이라 같은 행에 매출이 있어야 계산이 성립하고, 차트도
+-- 매출 막대 + 비율선을 한 분기 단위로 그린다.
+--
+-- is_disclosed=false는 "아직 공시 안 된 분기"다. 값이 전부 NULL이어도 **행은 남긴다** -
+-- 행을 빼버리면 Power BI 축에 구멍이 생겨서 3개년 12분기가 9개로 보인다.
+CREATE TABLE IF NOT EXISTS fact_quarterly_financial (
+    corp_code      text NOT NULL REFERENCES dim_company (corp_code) ON DELETE CASCADE,
+    bsns_year      integer NOT NULL,
+    quarter        integer NOT NULL CHECK (quarter IN (1, 2, 3, 4)),
+    period_sort    integer NOT NULL,   -- 20241, 20242... 축 정렬용(라벨 정렬은 연도 섞이면 깨짐)
+    period_label   text NOT NULL,      -- '2024 1Q'  (연속 타임라인 축)
+    quarter_label  text NOT NULL,      -- '1분기'    (분기끼리 묶어 비교하는 축)
+    revenue        numeric,
+    op_income      numeric,
+    net_income     numeric,
+    op_margin_pct  numeric,            -- 영업이익/매출*100 (매출 0·결측이면 NULL)
+    net_margin_pct numeric,            -- 당기순이익/매출*100
+    is_disclosed   boolean NOT NULL DEFAULT false,
+    PRIMARY KEY (corp_code, bsns_year, quarter)
+);
+CREATE INDEX IF NOT EXISTS ix_fact_quarterly_financial_corp
+    ON fact_quarterly_financial (corp_code);
