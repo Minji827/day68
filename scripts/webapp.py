@@ -283,10 +283,21 @@ def analyze(req: AnalyzeRequest):
                     {"rcept_no": r[0], "corp_code": r[1], "report_nm_clean": r[2], "orig_rcept_no": r[3]}
                     for r in cur.fetchall()
                 ]
+                # AI 해설은 부가 기능이라 실패해도 분석 본체를 죽이면 안 된다 -
+                # process_target_safe가 공시 1건마다 SAVEPOINT를 잡아 실패한 건만
+                # 되돌린다(예전엔 OpenAI 429 하나에 수집 결과까지 통째로 롤백됐음).
                 total = 0
+                failed = 0
                 for t in targets:
-                    total += explain_mod.process_target(cur, t, req.review_date)
-                step(f"  AI 해설 {total}개 문장 저장")
+                    n, err = explain_mod.process_target_safe(cur, t, req.review_date)
+                    total += n
+                    if err:
+                        failed += 1
+                        step(f"  AI 해설 실패(건너뜀) {t['rcept_no']}: {err}")
+                if failed:
+                    step(f"  AI 해설 {total}개 문장 저장 ({failed}건 실패 - 분석 결과는 정상 저장됨)")
+                else:
+                    step(f"  AI 해설 {total}개 문장 저장")
             else:
                 step("OPENAI_API_KEY 없음 - AI 해설 생략")
 

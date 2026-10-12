@@ -438,6 +438,14 @@
   const fmtFin = (name, n) => name === "부채비율" ? (n == null ? "—" : `${fmtNum(n)}%`) : fmtMan(n);
   const fmtPct = (n) => n == null ? "—" : (n >= 0 ? "+" : "") + (n * 100).toFixed(1) + "%";
   const fmtDate = (s) => s ? s.replace(/-/g, ".") : "—";
+  // 오늘 날짜(YYYY-MM-DD)를 "브라우저 로컬 시간대"로 만든다. toISOString()은 UTC로
+  // 바꿔버려서, KST(UTC+9) 기준 오전 9시 이전에는 검토 기준일 기본값이 하루 전으로
+  // 찍혔다 - 서버는 date.today()(로컬)를 쓰므로 하루 중 9시간은 클라이언트/서버
+  // 기본값이 서로 달랐다.
+  const todayLocal = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  };
   const dartUrl = (rcept) => `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rcept}`;
   const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
   // v4.1 4단계: "낮음"을 초록(--good)에서 회색(--low-grade)으로 - 초록은 direction
@@ -1147,7 +1155,7 @@
 
   // "검토 기준일" 기본값은 고정 날짜가 아니라 실시간(오늘) — loadDashboard가 기존 분석이
   // 있으면 그 review_date로 다시 덮어쓴다(이전 검토 흐름 이어가기), 없으면 오늘 그대로 유지.
-  document.getElementById("a-review-date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("a-review-date").value = todayLocal();
   loadDashboard();
 })();
 </script>

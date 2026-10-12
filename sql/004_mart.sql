@@ -143,6 +143,22 @@ ALTER TABLE mart.kpi_daily ADD COLUMN IF NOT EXISTS rate_exposed_companies integ
 -- change — n8n/PowerBI 등 이 테이블을 직접 조회하는 다른 팀원에게 공지 필요(사용자 확인).**
 -- 금리가 안 바뀐 회차는 기업별로 행을 만들 대상이 없으므로, corp_code='__ALL__'
 -- (sentinel - 특정 기업 아님) 한 행만 "변경 없음" 마커로 남긴다.
+--
+-- [복구] v4.1 3단계 커밋(8209a9e)이 구 스키마의 CREATE TABLE을 지우고 아래 ALTER
+-- 묶음만 남겨서, 새 DB에서는 "relation mart.rate_context does not exist"로 004가
+-- 통째로 실패했다(기존 DB엔 테이블이 이미 있어 로컬에서는 안 드러남). CREATE를
+-- "개정 후 최종 형태" 그대로 다시 넣는다 - 아래 ALTER들은 전부 IF EXISTS/IF NOT
+-- EXISTS 가드라 기존 DB에선 여전히 마이그레이션으로, 새 DB에선 no-op으로 돈다.
+CREATE TABLE IF NOT EXISTS mart.rate_context (
+    review_date     date NOT NULL,
+    corp_code       text NOT NULL DEFAULT '__ALL__',
+    rate_at_review  numeric,                      -- 검토일 시점 기준금리
+    rate_now        numeric,                      -- 적재된 최신 관측치
+    rate_direction  text CHECK (rate_direction IN ('up', 'down', 'flat')),
+    exposure_reason text,
+    PRIMARY KEY (review_date, corp_code)
+);
+
 ALTER TABLE mart.rate_context DROP CONSTRAINT IF EXISTS rate_context_pkey;
 ALTER TABLE mart.rate_context ADD COLUMN IF NOT EXISTS corp_code text NOT NULL DEFAULT '__ALL__';
 ALTER TABLE mart.rate_context ADD COLUMN IF NOT EXISTS rate_at_review numeric;

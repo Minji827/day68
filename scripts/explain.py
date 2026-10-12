@@ -219,6 +219,25 @@ def process_target(cur, target: dict, review_date: str) -> int:
     return n
 
 
+def process_target_safe(cur, target: dict, review_date: str) -> tuple[int, str | None]:
+    """process_target을 SAVEPOINT로 감싼 버전 - (저장 문장 수, 실패 사유) 반환.
+
+    AI 해설은 부가 기능이라 실패해도 같은 트랜잭션에 들어있는 분석 본체(RAW/CORE 적재,
+    분기 계산, 룰 결과)를 죽이면 안 된다. 예전엔 OpenAI 429/타임아웃 예외가 그대로
+    올라가서 바깥 트랜잭션이 통째로 롤백됐다(1분 걸린 수집 결과까지 전부 소실 + 500).
+    단순 try/except로는 부족하다 - DB 쪽 예외였다면 트랜잭션이 abort 상태로 남아
+    이후 모든 쿼리가 "current transaction is aborted"로 실패하기 때문에, 공시 1건마다
+    SAVEPOINT를 잡아 실패한 건만 되돌린다."""
+    cur.execute("SAVEPOINT ai_explain")
+    try:
+        n = process_target(cur, target, review_date)
+    except Exception as e:
+        cur.execute("ROLLBACK TO SAVEPOINT ai_explain")
+        return 0, str(e)
+    cur.execute("RELEASE SAVEPOINT ai_explain")
+    return n, None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--review-date", required=True)
@@ -276,10 +295,15 @@ def main() -> None:
                 ]
                 print(f"대상 정정공시 {len(targets)}건 (기업당 최대 {args.limit_per_company}건)")
                 total = 0
+                failed = 0
                 for t in targets:
                     print(f"- {t['rcept_no']} ({t['report_nm_clean']})")
-                    total += process_target(cur, t, args.review_date)
-        print(f"\nOK, 총 {total}개 해설 문장 저장")
+                    n, err = process_target_safe(cur, t, args.review_date)
+                    total += n
+                    if err:
+                        failed += 1
+                        print(f"  실패(건너뜀): {err}")
+        print(f"\nOK, 총 {total}개 해설 문장 저장" + (f" ({failed}건 실패)" if failed else ""))
     finally:
         conn.close()
 
