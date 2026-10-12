@@ -353,15 +353,7 @@
           <div class="pg-btns" id="rank-pg-btns"></div>
         </div>
       </div>
-      <div class="grid-2">
-        <div class="panel">
-          <div class="panel-head"><div class="panel-title">최근 공시 발생 추이 (주간)</div>
-            <div class="legend"><div class="legend-item"><span class="legend-dot" style="background:var(--series-1)"></span>신규 공시</div><div class="legend-item"><span class="legend-dot" style="background:var(--critical)"></span>정정 공시</div></div>
-          </div>
-          <div id="trend-chart"></div>
-        </div>
-        <div class="panel summary-card" id="sel-summary"></div>
-      </div>
+      <div class="panel summary-card" id="sel-summary"></div>
       <div class="grid-2">
         <div class="panel"><div class="panel-head"><div class="panel-title" id="fin-top-title">주요 재무 변화</div><div class="unit-note">단위: 백만원</div></div><div class="table-wrap"><table id="fin-top-table"></table></div></div>
         <div class="panel"><div class="panel-head"><div class="panel-title" id="corr-top-title">정정 공시</div></div><div class="table-wrap"><table id="corr-top-table"></table></div></div>
@@ -581,7 +573,7 @@
     if (!DATA || !DATA.company_priority.length) {
       document.getElementById("hero-priority").innerHTML = '<div class="placeholder">아직 분석된 기업이 없습니다. 위에서 종목코드를 입력하고 "분석 시작"을 눌러주세요.</div>';
       document.getElementById("kpi-row").innerHTML = "";
-      ["rank-table","rank-filter-chips","rank-pg-note","rank-pg-btns","trend-chart","sel-summary","fin-top-table","corr-top-table","dist-chart","detail-banner","detail-fin-table","detail-rules","slope-chart","detail-new-table","detail-corr-table","ai-explain","detail-macro"].forEach(id => document.getElementById(id).innerHTML = "");
+      ["rank-table","rank-filter-chips","rank-pg-note","rank-pg-btns","sel-summary","fin-top-table","corr-top-table","dist-chart","detail-banner","detail-fin-table","detail-rules","slope-chart","detail-new-table","detail-corr-table","ai-explain","detail-macro"].forEach(id => document.getElementById(id).innerHTML = "");
       document.getElementById("f-corp").innerHTML = '<option value="all">전체</option>';
       document.getElementById("d-corp").innerHTML = "";
       return;
@@ -600,7 +592,6 @@
     safe("renderHeroPriority", renderHeroPriority);
     safe("renderKPIs", renderKPIs);
     safe("renderRankChart", renderRankChart);
-    safe("renderTrendChart", renderTrendChart);
     safe("renderSummary", () => renderSummary(rankedForSelect[0].corp_code));
     safe("renderFinTop", renderFinTop);
     safe("renderCorrTop", renderCorrTop);
@@ -747,38 +738,6 @@
     document.querySelectorAll("#rank-pg-btns .pgbtn[data-page]").forEach((btn) => {
       btn.onclick = () => { rankPage = Number(btn.dataset.page); renderRankChart(); };
     });
-  }
-
-  function isoWeek(dateStr) {
-    const d = new Date(dateStr + "T00:00:00Z");
-    const day = (d.getUTCDay() + 6) % 7;
-    d.setUTCDate(d.getUTCDate() - day);
-    return d.toISOString().slice(0, 10);
-  }
-  function renderTrendChart() {
-    const buckets = {};
-    DATA.disclosures.forEach((d) => {
-      const wk = isoWeek(d.rcept_dt);
-      if (!buckets[wk]) buckets[wk] = { newC: 0, corr: 0 };
-      if (d.is_correction) buckets[wk].corr++; else buckets[wk].newC++;
-    });
-    const weeks = Object.keys(buckets).sort();
-    const W = 560, H = 190, padL = 30, padR = 10, padT = 10, padB = 24;
-    const plotW = W - padL - padR, plotH = H - padT - padB;
-    const maxV = Math.max(1, ...weeks.map((w) => Math.max(buckets[w].newC, buckets[w].corr)));
-    const x = (i) => padL + (weeks.length <= 1 ? plotW / 2 : (i / (weeks.length - 1)) * plotW);
-    const y = (v) => padT + plotH - (v / maxV) * plotH;
-    const line = (key, color) => {
-      const pts = weeks.map((w, i) => `${x(i)},${y(buckets[w][key])}`).join(" ");
-      const dots = weeks.map((w, i) => `<circle cx="${x(i)}" cy="${y(buckets[w][key])}" r="3" fill="${color}" />`).join("");
-      return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
-    };
-    const gridLines = [0, 0.5, 1].map((f) => {
-      const yy = padT + plotH * (1 - f);
-      return `<line class="grid-line" x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}"/><text x="${padL - 6}" y="${yy + 3}" text-anchor="end">${Math.round(maxV * f)}</text>`;
-    }).join("");
-    const xLabels = weeks.filter((_, i) => i % Math.ceil(weeks.length / 6 || 1) === 0).map((w) => `<text x="${x(weeks.indexOf(w))}" y="${H - 6}" text-anchor="middle">${w.slice(5)}</text>`).join("");
-    document.getElementById("trend-chart").innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${gridLines}<line class="axis-line" x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}"/>${line("newC", "var(--series-1)")}${line("corr", "var(--critical)")}${xLabels}</svg>`;
   }
 
   function renderSummary(corpCode) {
@@ -930,8 +889,13 @@
     pctMin -= pctPad; pctMax += pctPad;
     const yPct = (v) => padT + plotH - ((v - pctMin) / (pctMax - pctMin)) * plotH;
 
+    // v4.5-2: 선 대신 분기마다 막대 3개(매출/영업이익률/순이익률)를 나란히 묶어서
+    // 보여달라는 요청 - 선이 축 전체를 압축해서 특히 변동이 큰 분기에서 읽기 어려웠던
+    // 문제도 막대 쪽이 한눈에 비교하기 쉽다. 매출은 좌축(억원), 나머지 둘은 우축(%).
     const slotW = plotW / n;
-    const barW = slotW * 0.5;
+    const barW = slotW * 0.22;
+    const barGap = slotW * 0.035;
+    const groupW = barW * 3 + barGap * 2;
 
     let svg = `<line x1="${padL}" y1="${padT+plotH}" x2="${W-padR}" y2="${padT+plotH}" stroke="var(--baseline)" stroke-width="1"/>`;
     [0, 0.5, 1].forEach((f) => {
@@ -946,44 +910,34 @@
       const y0 = yPct(0);
       svg += `<line x1="${padL}" y1="${y0}" x2="${W-padR}" y2="${y0}" stroke="var(--critical)" stroke-width="1" stroke-opacity="0.35" stroke-dasharray="1 3"/>`;
     }
+
+    const geoms = points.map((d, i) => {
+      const cx = xPos(i);
+      const gStart = cx - groupW / 2;
+      return { ...d, cx, revX: gStart, opX: gStart + barW + barGap, netX: gStart + (barW + barGap) * 2 };
+    });
+
     // 연도 경계선(1분기 시작 지점)을 얇게 그려서 "어디서부터 새해인지" 구분되게 한다.
-    const geoms = points.map((d, i) => ({ ...d, cx: xPos(i), barX: xPos(i) - barW / 2 }));
     geoms.forEach((g) => {
       if (g.quarter !== 1) return;
-      const xx = g.barX - (slotW - barW) / 2;
+      const xx = g.cx - slotW / 2;
       svg += `<line x1="${xx}" y1="${padT}" x2="${xx}" y2="${padT+plotH}" stroke="var(--grid)" stroke-width="1"/>`;
     });
 
+    // %축 막대는 값이 음수면 0%선 아래로 내려가야 한다 - y/height를 부호에 안 가리고 계산.
+    function pctBarRect(x, v, color) {
+      if (v == null) return "";
+      const y0 = yPct(0), y1 = yPct(v);
+      const top = Math.min(y0, y1), h = Math.abs(y1 - y0);
+      return `<rect x="${x}" y="${top}" width="${barW}" height="${Math.max(h, 1)}" fill="${color}"/>`;
+    }
     geoms.forEach((g) => {
       if (g.rev != null) {
-        svg += `<rect x="${g.barX}" y="${yRev(g.rev)}" width="${barW}" height="${yRev(0)-yRev(g.rev)}" fill="var(--series-1)"/>`;
+        svg += `<rect x="${g.revX}" y="${yRev(g.rev)}" width="${barW}" height="${yRev(0)-yRev(g.rev)}" fill="var(--series-1)"/>`;
       }
+      svg += pctBarRect(g.opX, g.opMargin, "var(--series-2)");
+      svg += pctBarRect(g.netX, g.netMargin, "var(--series-3)");
     });
-
-    // 선(영업이익률/순이익률): 결측 지점에서 선이 끊기도록 구간별로 M/L을 새로 연다.
-    function linePath(key) {
-      let d = "", open = false;
-      geoms.forEach((g) => {
-        const v = g[key];
-        if (v == null) { open = false; return; }
-        const cmd = open ? "L" : "M";
-        d += `${cmd}${g.cx},${yPct(v)} `;
-        open = true;
-      });
-      return d.trim();
-    }
-    function lineSeries(key, color) {
-      const d = linePath(key);
-      if (!d) return "";
-      let out = `<path d="${d}" fill="none" stroke="${color}" stroke-width="2"/>`;
-      geoms.forEach((g) => {
-        if (g[key] == null) return;
-        out += `<circle cx="${g.cx}" cy="${yPct(g[key])}" r="3" fill="${color}" stroke="var(--surface-raised)" stroke-width="1.2"/>`;
-      });
-      return out;
-    }
-    svg += lineSeries("opMargin", "var(--series-2)");
-    svg += lineSeries("netMargin", "var(--series-3)");
 
     geoms.forEach((g) => {
       // 연초(1분기)에만 "YY" 연도 라벨을 분기 라벨 아래 작게 추가 - 12개 라벨이
@@ -1001,14 +955,17 @@
       `<div class="legend-item"><span class="legend-dot" style="background:var(--series-3)"></span>순이익률 (우축, %)</div>` +
       `</div><div class="chart-hint" style="margin-top:4px;">매출 단위: 억원 · 분기를 클릭하면 그 분기 수치가 말풍선으로 뜹니다.</div>`;
 
-    wireQuarterlyInteraction(host, geoms, yRev, barW, W);
+    wireQuarterlyInteraction(host, geoms, yRev, yPct, barW, W);
   }
 
-  function wireQuarterlyInteraction(host, geoms, yRev, barW, svgW) {
+  function wireQuarterlyInteraction(host, geoms, yRev, yPct, barW, svgW) {
     const stage = host.querySelector(".chart-stage");
     const svgEl = stage.querySelector("svg");
     const layer = svgEl.querySelector(".qc-crosshair");
 
+    function hlRect(x, yTop, h) {
+      return `<rect x="${x-1.5}" y="${yTop-1.5}" width="${barW+3}" height="${Math.max(h,1)+3}" fill="none" stroke="var(--text-primary)" stroke-width="1" opacity="0.35"/>`;
+    }
     function showAt(clientX) {
       const rect = svgEl.getBoundingClientRect();
       const relX = (clientX - rect.left) / rect.width;
@@ -1016,9 +973,9 @@
       const g = geoms[i];
 
       let hl = "";
-      if (g.rev != null) {
-        hl += `<rect x="${g.barX-1.5}" y="${yRev(g.rev)-1.5}" width="${barW+3}" height="${yRev(0)-yRev(g.rev)+3}" fill="none" stroke="var(--text-primary)" stroke-width="1" opacity="0.35"/>`;
-      }
+      if (g.rev != null) hl += hlRect(g.revX, yRev(g.rev), yRev(0) - yRev(g.rev));
+      if (g.opMargin != null) { const y0=yPct(0), y1=yPct(g.opMargin); hl += hlRect(g.opX, Math.min(y0,y1), Math.abs(y1-y0)); }
+      if (g.netMargin != null) { const y0=yPct(0), y1=yPct(g.netMargin); hl += hlRect(g.netX, Math.min(y0,y1), Math.abs(y1-y0)); }
       layer.innerHTML = hl;
 
       const old = stage.querySelector(".chart-tip");
