@@ -134,7 +134,6 @@
   .kpi-value sub { font-size: 11px; font-weight: 500; color: var(--text-muted); margin-left: 2px; }
   .kpi-delta { font-size: 10.5px; color: var(--text-muted); }
 
-  .grid-3 { display: grid; grid-template-columns: 1.1fr 1.3fr 1fr; gap: 14px; align-items: stretch; }
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   .panel { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -150,14 +149,28 @@
      + 2줄(막대) + 3줄(사유)로 세로로 쌓아서 가로 폭 경합 자체를 없앤다. */
   .rank-row { display: flex; flex-direction: column; gap: 6px; padding: 12px 8px; border-bottom: 1px solid var(--grid); }
   .rank-row:last-child { border-bottom: none; }
-  .rank-row[data-corp] { cursor: pointer; border-radius: 8px; }
-  .rank-row[data-corp]:hover { background: var(--muted-bg); }
-  .rank-top { display: flex; align-items: center; gap: 8px; }
-  .rank-order { flex-shrink: 0; font-size: 11.5px; font-weight: 700; color: var(--text-muted); }
   .rank-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rank-track { height: 10px; background: var(--muted-bg); border-radius: 5px; position: relative; overflow: hidden; }
-  .rank-fill { height: 100%; border-radius: 5px 0 0 5px; }
   .rank-score { flex-shrink: 0; font-size: 14px; font-weight: 700; }
+
+  /* v4.5: "기업별 재검토 우선순위"를 전체 너비 압축 테이블 + 페이지네이션으로 재설계
+     (팀 UX 리뷰 Option B) - 기업 수가 늘어도 패널 높이가 고정되게. */
+  .chip { font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 99px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary);
+    cursor: pointer; white-space: nowrap; }
+  .chip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .rank-table-wrap tbody tr[data-corp] { cursor: pointer; }
+  .rank-table-wrap tbody tr[data-corp]:hover td { background: var(--muted-bg); }
+  .rank-table-wrap td.reason-cell { color: var(--text-muted); max-width: 320px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .pg { display: flex; align-items: center; justify-content: space-between; padding-top: 10px; }
+  .pg-note { font-size: 11px; color: var(--text-muted); }
+  .pg-btns { display: flex; gap: 4px; align-items: center; }
+  .pgbtn { font-size: 12px; color: var(--text-secondary); border: 1px solid var(--border);
+    border-radius: 7px; padding: 5px 10px; cursor: pointer; background: var(--surface); min-width: 30px; text-align: center; }
+  .pgbtn.on { background: var(--brand); color: #fff; border-color: var(--brand); font-weight: 700; cursor: default; }
+  .pgbtn:disabled { opacity: 0.4; cursor: default; }
+  .pgbtn.dots { border: none; background: none; cursor: default; color: var(--text-muted); padding: 5px 2px; }
 
   /* 한글 표 셀이 좁을 때 "호\n텔\n신\n라"처럼 글자 단위로 깨지는 문제 방지 —
      단어 단위로만 줄바꿈하고, 그래도 넘치면 .table-wrap의 가로 스크롤로 처리. */
@@ -190,8 +203,6 @@
   .rule-chip.negative { background: var(--critical-bg); color: var(--critical); }
   .rule-chip.neutral { background: var(--muted-bg); color: var(--text-secondary); }
   .reason-headline { font-size: 14px; font-weight: 600; color: var(--text-primary); line-height: 1.6; }
-  .reason-sub { font-size: 13px; color: var(--text-secondary); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .basis-counts { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
   .transition-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 99px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
   /* 주식 시세 표기 관행(상승=빨강/하락=파랑)에 맞춰 F1/F2 흑자<->적자 전환 배지 색을
      반전 - 의미 기준(좋음=파랑/나쁨=빨강)이 아니라 숫자가 오르내리는 방향 기준으로
@@ -284,7 +295,6 @@
     .nav { flex-direction: row; flex: 1; }
     .nav-item { justify-content: center; }
     .kpi-row { grid-template-columns: repeat(2, 1fr); }
-    .grid-3 { grid-template-columns: 1fr; }
     .grid-2 { grid-template-columns: 1fr; }
   }
 </style>
@@ -332,13 +342,18 @@
         <div class="hero-priority" id="hero-priority"></div>
         <div class="kpi-row" id="kpi-row"></div>
       </div>
-      <div class="grid-3">
-        <div class="panel">
-          <div class="panel-head"><div class="panel-title">기업별 재검토 우선순위</div>
-            <div class="legend"><div class="legend-item"><span class="legend-dot" style="background:var(--emergency)"></span>긴급확인</div><div class="legend-item"><span class="legend-dot" style="background:var(--critical)"></span>높음</div><div class="legend-item"><span class="legend-dot" style="background:var(--warning)"></span>중간</div><div class="legend-item"><span class="legend-dot" style="background:var(--low-grade)"></span>낮음</div></div>
-          </div>
-          <div id="rank-chart" style="display:flex; flex-direction:column; gap:9px;"></div>
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">기업별 재검토 우선순위</div>
+          <div class="chips" id="rank-filter-chips" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
         </div>
+        <div class="table-wrap rank-table-wrap"><table id="rank-table"></table></div>
+        <div class="pg">
+          <div class="pg-note" id="rank-pg-note"></div>
+          <div class="pg-btns" id="rank-pg-btns"></div>
+        </div>
+      </div>
+      <div class="grid-2">
         <div class="panel">
           <div class="panel-head"><div class="panel-title">최근 공시 발생 추이 (주간)</div>
             <div class="legend"><div class="legend-item"><span class="legend-dot" style="background:var(--series-1)"></span>신규 공시</div><div class="legend-item"><span class="legend-dot" style="background:var(--critical)"></span>정정 공시</div></div>
@@ -518,8 +533,8 @@
     showView("detail");
     safe("renderDetail", () => renderDetail(corpCode));
   }
-  document.getElementById("rank-chart").addEventListener("click", (e) => {
-    const row = e.target.closest(".rank-row[data-corp]");
+  document.getElementById("rank-table").addEventListener("click", (e) => {
+    const row = e.target.closest("tr[data-corp]");
     if (row) goToDetail(row.dataset.corp);
   });
   document.getElementById("hero-priority").addEventListener("click", (e) => {
@@ -566,7 +581,7 @@
     if (!DATA || !DATA.company_priority.length) {
       document.getElementById("hero-priority").innerHTML = '<div class="placeholder">아직 분석된 기업이 없습니다. 위에서 종목코드를 입력하고 "분석 시작"을 눌러주세요.</div>';
       document.getElementById("kpi-row").innerHTML = "";
-      ["rank-chart","trend-chart","sel-summary","fin-top-table","corr-top-table","dist-chart","detail-banner","detail-fin-table","detail-rules","slope-chart","detail-new-table","detail-corr-table","ai-explain","detail-macro"].forEach(id => document.getElementById(id).innerHTML = "");
+      ["rank-table","rank-filter-chips","rank-pg-note","rank-pg-btns","trend-chart","sel-summary","fin-top-table","corr-top-table","dist-chart","detail-banner","detail-fin-table","detail-rules","slope-chart","detail-new-table","detail-corr-table","ai-explain","detail-macro"].forEach(id => document.getElementById(id).innerHTML = "");
       document.getElementById("f-corp").innerHTML = '<option value="all">전체</option>';
       document.getElementById("d-corp").innerHTML = "";
       return;
@@ -656,39 +671,82 @@
     if (!events.length) return null;
     return events.slice().sort((a, b) => b.score - a.score)[0].description;
   }
+  // v4.5: 전체 너비 압축 테이블 + 등급 필터 칩 + 페이지네이션 (팀 UX 리뷰 Option B).
+  // 기업 수가 늘어도(100개든 10개든) 패널 높이가 고정되도록 카드 스택 대신 테이블로
+  // 재설계 - 아래 "주요 재무 변화" 등 다른 패널이 항상 같은 위치에 오게 하는 게 목적.
+  const RANK_PAGE_SIZE = 10;
+  let rankFilter = "all"; // all | emergency | high | mid | low | none
+  let rankPage = 1;
+  const RANK_FILTER_DEFS = [
+    { key: "all", label: "전체" }, { key: "emergency", label: "긴급확인" },
+    { key: "high", label: "높음" }, { key: "mid", label: "중간" },
+    { key: "low", label: "낮음" }, { key: "none", label: "없음" },
+  ];
+
+  function renderPgButtons(page, totalPages) {
+    if (totalPages <= 1) return "";
+    const nums = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) nums.push(i);
+    } else {
+      nums.push(1);
+      if (page > 3) nums.push("…");
+      for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) nums.push(i);
+      if (page < totalPages - 2) nums.push("…");
+      nums.push(totalPages);
+    }
+    const btn = (label, p, cls) => `<button class="pgbtn${cls || ""}" ${p == null ? "disabled" : `data-page="${p}"`}>${label}</button>`;
+    let html = btn("‹", page > 1 ? page - 1 : null);
+    nums.forEach((n) => { html += n === "…" ? `<span class="pgbtn dots">…</span>` : btn(n, n, n === page ? " on" : ""); });
+    html += btn("›", page < totalPages ? page + 1 : null);
+    return html;
+  }
+
   function renderRankChart() {
     // 긴급확인은 점수와 무관하게 항상 최우선 - 숫자만으로 정렬하면 "긴급확인(7점)"이
     // "높음(9점)" 밑으로 내려가는 모순이 생긴다(스펙 8번 원칙과 어긋남).
     const ranked = DATA.company_priority.slice().sort((a, b) => (b.is_emergency - a.is_emergency) || (b.priority_score - a.priority_score));
-    const max = Math.max(1, ...ranked.map((r) => r.priority_score));
-    document.getElementById("rank-chart").innerHTML = ranked.map((r, i) => {
-      const pct = Math.max(6, (r.priority_score / max) * 100);
-      // "10", "9"처럼 숫자만 보이면 "순위"로 오해할 수 있어 "점"을 붙이고, 진짜 순위는
-      // 왼쪽에 "1위"로 따로 표시한다 — 둘을 섞어 읽을 여지를 없앤다.
-      const scoreLabel = r.priority_level === "none" ? "변화없음" : `${r.priority_score}점`;
-      const reason = topReason(r.corp_code);
-      return `<div class="rank-row" data-corp="${r.corp_code}" title="클릭하면 이 기업 상세 분석으로 이동">
-          <div class="rank-top">
-            <div class="rank-order num">${i + 1}위</div>
-            <div class="rank-name">${esc(r.corp_name)}</div>
-            ${additionalEventsTagHtml(r)}
-            <div class="rank-score num">${scoreLabel}</div>
-          </div>
-          <div class="rank-track"><div class="rank-fill" style="width:${pct}%; background:${levelColor[r.priority_level]}"></div></div>
-          ${reason ? `<div class="reason-sub" title="${esc(reason)}">${esc(reason)}</div>` : ""}
-          ${basisCountsHtml(r)}
-        </div>`;
-    }).join("");
-  }
 
-  // v4.1 4단계: YoY/정정/신규가 서로 다른 비교축이라는 걸 랭킹 목록에서도 바로
-  // 구분할 수 있게 - 전부 0건인 기업(예: priority_level='none')은 생략.
-  function basisCountsHtml(r) {
-    const parts = [];
-    if (r.yoy_event_count > 0) parts.push(`전년동기 ${r.yoy_event_count}`);
-    if (r.correction_event_count > 0) parts.push(`정정 ${r.correction_event_count}`);
-    if (r.new_event_count > 0) parts.push(`신규 ${r.new_event_count}`);
-    return parts.length ? `<div class="basis-counts">${parts.join(" · ")}</div>` : "";
+    const counts = { all: ranked.length, emergency: 0, high: 0, mid: 0, low: 0, none: 0 };
+    ranked.forEach((r) => { counts[r.priority_level] = (counts[r.priority_level] || 0) + 1; });
+    document.getElementById("rank-filter-chips").innerHTML = RANK_FILTER_DEFS.map((c) =>
+      `<span class="chip${rankFilter === c.key ? " on" : ""}" data-filter="${c.key}">${c.label} ${counts[c.key] || 0}</span>`
+    ).join("");
+
+    const filtered = rankFilter === "all" ? ranked : ranked.filter((r) => r.priority_level === rankFilter);
+    const totalPages = Math.max(1, Math.ceil(filtered.length / RANK_PAGE_SIZE));
+    rankPage = Math.min(Math.max(1, rankPage), totalPages);
+    const pageItems = filtered.slice((rankPage - 1) * RANK_PAGE_SIZE, rankPage * RANK_PAGE_SIZE);
+
+    const rows = pageItems.map((r, i) => {
+      const globalIdx = (rankPage - 1) * RANK_PAGE_SIZE + i;
+      const reason = topReason(r.corp_code);
+      const scoreLabel = r.priority_level === "none" ? "—" : `${r.priority_score}점`;
+      return `<tr data-corp="${r.corp_code}" title="클릭하면 이 기업 상세 분석으로 이동">
+          <td class="num-cell">${globalIdx + 1}위</td>
+          <td class="name-cell">${esc(r.corp_name)} ${additionalEventsTagHtml(r)}</td>
+          <td><span class="badge ${levelBadgeClass[r.priority_level]}">${levelLabel[r.priority_level]}</span></td>
+          <td class="num-cell">${scoreLabel}</td>
+          <td class="num-cell">${r.new_event_count || 0}</td>
+          <td class="num-cell">${r.correction_event_count || 0}</td>
+          <td class="reason-cell" title="${reason ? esc(reason) : ""}">${reason ? esc(reason) : "—"}</td>
+        </tr>`;
+    }).join("");
+    document.getElementById("rank-table").innerHTML =
+      "<thead><tr><th>순위</th><th>기업</th><th>등급</th><th>점수</th><th>신규</th><th>정정</th><th>대표 사유</th></tr></thead>" +
+      `<tbody>${rows || '<tr><td colspan="7" class="empty-note">표시할 기업 없음</td></tr>'}</tbody>`;
+
+    const startN = filtered.length ? (rankPage - 1) * RANK_PAGE_SIZE + 1 : 0;
+    const endN = Math.min(filtered.length, rankPage * RANK_PAGE_SIZE);
+    document.getElementById("rank-pg-note").textContent = `${filtered.length}개 기업 중 ${startN}–${endN} 표시`;
+    document.getElementById("rank-pg-btns").innerHTML = renderPgButtons(rankPage, totalPages);
+
+    document.querySelectorAll("#rank-filter-chips .chip").forEach((chip) => {
+      chip.onclick = () => { rankFilter = chip.dataset.filter; rankPage = 1; renderRankChart(); };
+    });
+    document.querySelectorAll("#rank-pg-btns .pgbtn[data-page]").forEach((btn) => {
+      btn.onclick = () => { rankPage = Number(btn.dataset.page); renderRankChart(); };
+    });
   }
 
   function isoWeek(dateStr) {
@@ -749,8 +807,12 @@
   }
 
   function renderFinTop() {
-    const items = DATA.change_events.filter((e) => e.change_type === "financial").slice().sort((a, b) => b.score - a.score || Math.abs(b.change_rate || 0) - Math.abs(a.change_rate || 0));
-    document.getElementById("fin-top-title").textContent = `주요 재무 변화 (전체 ${items.length}건)`;
+    // v4.5: 기업 수와 무관하게 패널 높이가 일정하도록 점수 상위 12건으로 cap한다
+    // (상세 분석 화면의 동명 표는 이미 이 cap이 있었는데, 전체 모니터링 화면 쪽만
+    // 빠져 있었음 - 우선순위 테이블 재설계와 같은 원칙으로 같이 맞춤).
+    const all = DATA.change_events.filter((e) => e.change_type === "financial").slice().sort((a, b) => b.score - a.score || Math.abs(b.change_rate || 0) - Math.abs(a.change_rate || 0));
+    const items = all.slice(0, 12);
+    document.getElementById("fin-top-title").textContent = `주요 재무 변화 — 전체 ${all.length}건 중 상위 ${items.length}건`;
     const rows = items.map((e) => `<tr><td class="name-cell">${esc(e.corp_name)}</td><td>${esc(e.account_std_name || "")}</td><td class="num-cell">${fmtFin(e.account_std_name, e.old_value)}</td><td class="num-cell">${fmtFin(e.account_std_name, e.new_value)}</td><td class="num-cell">${financialChangeCell(e.rule_id, e.change_rate != null ? e.change_rate / 100 : null, e.direction)}</td><td>${ruleChipHtml(e.rule_id, e.direction)}</td></tr>`).join("");
     document.getElementById("fin-top-table").innerHTML = `<thead><tr><th>기업</th><th>지표</th><th>이전</th><th>최신</th><th>변화</th><th>Rule</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty-note">탐지된 재무 변화 없음</td></tr>'}</tbody>`;
   }
