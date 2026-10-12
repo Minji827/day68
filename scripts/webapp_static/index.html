@@ -385,7 +385,7 @@
         </div>
         <div class="panel">
           <div class="panel-head">
-            <div class="panel-title">분기별 지표 추이 (최근 12분기)</div>
+            <div class="panel-title">분기별 지표 추이 (분기별 3개년 비교)</div>
           </div>
           <div id="slope-chart"></div>
         </div>
@@ -806,6 +806,8 @@
   // 선(우축, %) 콤보 차트로 재설계.
   // v4.4-2: "보통 3년치를 본다"는 요청으로 "올해 vs 작년" 오버레이 구조를 버리고
   // 12분기(3개년) 연속 타임라인으로 재설계 - "작년 함께 보기" 토글 제거.
+  // v4.6: 12분기를 일렬로 늘어놓는 대신 분기 번호(1~4분기)로 묶고, 묶음 안에 연도별
+  // 매출 막대를 세운다. 비율 두 개는 v4.5-2의 막대를 접고 다시 꺾은선(우축)으로.
   const fmtEok = (n) => n == null ? "—" : (n / 1e8).toLocaleString("ko-KR", { maximumFractionDigits: 1 });
   const fmtMarginPct = (n) => n == null ? "—" : n.toFixed(1) + "%";
   // 매출이 0/결측이면 비율이 무의미하므로 null(선 끊김)로 둔다 - 0%로 그리면 "실제로
@@ -847,59 +849,59 @@
       const next = byAccount[accountCode]?.[String(Number(year) + 1)]?.[quarter];
       return next ? next.prior_amount : null;
     }
-
-    const allPoints = displayYears.flatMap((year) => [1, 2, 3, 4].map((quarter) => {
+    function pointAt(year, quarter) {
       const rev = valueAt("REVENUE", year, quarter);
       const op = valueAt("OP_INCOME", year, quarter);
       const net = valueAt("NET_INCOME", year, quarter);
-      return {
-        year, quarter, rev,
-        opMargin: marginOf(op, rev),
-        netMargin: marginOf(net, rev),
-      };
-    }));
-    // 아직 보고서가 하나도 안 올라온 미래 분기(예: 올해 3·4분기)는 타임라인 끝에서
-    // 잘라낸다 - 중간에 구멍이 있는 경우는 없음(과거는 항상 다 채워짐).
-    let lastIdx = allPoints.length - 1;
-    while (lastIdx >= 0 && allPoints[lastIdx].rev == null && allPoints[lastIdx].opMargin == null && allPoints[lastIdx].netMargin == null) lastIdx--;
-    const points = allPoints.slice(0, lastIdx + 1);
-    if (!points.length) {
+      return { year, quarter, rev, opMargin: marginOf(op, rev), netMargin: marginOf(net, rev) };
+    }
+
+    // v4.6: "12분기 연속 타임라인" 대신 분기 번호로 묶는다 - 1분기 칸에 3개년 1분기가
+    // 나란히, 2분기 칸에 3개년 2분기가... 이렇게 놓여야 계절성을 빼고 전년동기 대비를
+    // 바로 읽을 수 있다는 요청. 아직 안 올라온 분기는 열을 지우지 않고 "미공시"로 남겨
+    // 둔다(예: 올해 3분기 미공시 -> 3분기 칸은 막대 2개 + 미공시 1칸).
+    // 단, 네 분기 모두 값이 없는 연도는 "미공시"만 4칸 생기므로 통째로 제외한다.
+    const hasAny = (p) => p.rev != null || p.opMargin != null || p.netMargin != null;
+    const years = displayYears.filter((y) => [1, 2, 3, 4].some((q) => hasAny(pointAt(y, q))));
+    if (!years.length) {
       host.innerHTML = '<div class="empty-note">선택한 지표의 분기 데이터 없음</div>';
       return;
     }
+    const groups = [1, 2, 3, 4].map((quarter) => ({ quarter, slots: years.map((y) => pointAt(y, quarter)) }));
 
     // padL: 매출 억원 축 라벨이 큰 기업(예: 삼성전자 1,972,243.9억)에서 10자 넘게
     // 길어질 수 있어 - 짧으면 SVG viewBox 왼쪽 밖으로 텍스트가 잘린다(실측 버그).
-    const W = 760, H = 230, padL = 66, padR = 46, padT = 22, padB = 26;
+    // padB: 연도 라벨 줄 + 분기 라벨 줄, 두 줄이 들어가야 해서 넉넉히 잡는다.
+    const W = 760, H = 244, padL = 66, padR = 46, padT = 20, padB = 38;
     const plotW = W - padL - padR, plotH = H - padT - padB;
-    const n = points.length;
-    const xPos = (i) => padL + ((i + 0.5) / n) * plotW;
+    const baseY = padT + plotH;
+    const groupW = plotW / 4;
+    const innerW = groupW * 0.76;            // 분기 그룹 사이에 숨 쉴 틈을 남긴다
+    const slotW = innerW / years.length;
+    const barW = Math.min(slotW * 0.62, 26);
+
+    const geoms = groups.flatMap((g, gi) => {
+      const gx = padL + groupW * gi + (groupW - innerW) / 2;
+      return g.slots.map((p, si) => ({ ...p, gi, si, cx: gx + slotW * (si + 0.5) }));
+    });
 
     // 좌축(매출, 억원): 0부터 시작 - 항상 양수.
-    const revVals = points.map((d) => d.rev).filter((v) => v != null);
+    const revVals = geoms.map((d) => d.rev).filter((v) => v != null);
     const maxRev = Math.max(1, ...revVals) * 1.15;
-    const yRev = (v) => padT + plotH - (Math.max(0, v) / maxRev) * plotH;
+    const yRev = (v) => baseY - (Math.max(0, v) / maxRev) * plotH;
 
     // 우축(%): 영업이익률/순이익률은 적자면 음수가 될 수 있어(예: 예시B) 0을 포함하는
-    // 대칭 도메인을 쓴다 - 음수 구간이 전혀 없으면 보통 막대 바닥(0%)에 가깝게 보임.
-    const pctVals = points.flatMap((d) => [d.opMargin, d.netMargin]).filter((v) => v != null);
+    // 도메인을 쓴다 - 음수 구간이 전혀 없으면 보통 바닥(0%)에 가깝게 보임.
+    const pctVals = geoms.flatMap((d) => [d.opMargin, d.netMargin]).filter((v) => v != null);
     let pctMin = Math.min(0, ...pctVals), pctMax = Math.max(0, ...pctVals);
     if (!pctVals.length) { pctMin = -10; pctMax = 10; }
     const pctPad = (pctMax - pctMin || 20) * 0.15;
     pctMin -= pctPad; pctMax += pctPad;
-    const yPct = (v) => padT + plotH - ((v - pctMin) / (pctMax - pctMin)) * plotH;
+    const yPct = (v) => baseY - ((v - pctMin) / (pctMax - pctMin)) * plotH;
 
-    // v4.5-2: 선 대신 분기마다 막대 3개(매출/영업이익률/순이익률)를 나란히 묶어서
-    // 보여달라는 요청 - 선이 축 전체를 압축해서 특히 변동이 큰 분기에서 읽기 어려웠던
-    // 문제도 막대 쪽이 한눈에 비교하기 쉽다. 매출은 좌축(억원), 나머지 둘은 우축(%).
-    const slotW = plotW / n;
-    const barW = slotW * 0.22;
-    const barGap = slotW * 0.035;
-    const groupW = barW * 3 + barGap * 2;
-
-    let svg = `<line x1="${padL}" y1="${padT+plotH}" x2="${W-padR}" y2="${padT+plotH}" stroke="var(--baseline)" stroke-width="1"/>`;
+    let svg = `<line x1="${padL}" y1="${baseY}" x2="${W-padR}" y2="${baseY}" stroke="var(--baseline)" stroke-width="1"/>`;
     [0, 0.5, 1].forEach((f) => {
-      const yy = padT + plotH * (1 - f);
+      const yy = baseY - plotH * f;
       if (f > 0) svg += `<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="var(--grid)" stroke-width="1" stroke-dasharray="2 4"/>`;
       svg += `<text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9.5" fill="var(--text-muted)">${fmtEok(f*maxRev)}</text>`;
       svg += `<text x="${W-padR+6}" y="${yy+3}" text-anchor="start" font-size="9.5" fill="var(--text-muted)">${(pctMin+f*(pctMax-pctMin)).toFixed(0)}%</text>`;
@@ -911,71 +913,84 @@
       svg += `<line x1="${padL}" y1="${y0}" x2="${W-padR}" y2="${y0}" stroke="var(--critical)" stroke-width="1" stroke-opacity="0.35" stroke-dasharray="1 3"/>`;
     }
 
-    const geoms = points.map((d, i) => {
-      const cx = xPos(i);
-      const gStart = cx - groupW / 2;
-      return { ...d, cx, revX: gStart, opX: gStart + barW + barGap, netX: gStart + (barW + barGap) * 2 };
+    // 분기 그룹 경계선 - 어디까지가 한 분기 묶음인지 구분해 준다.
+    [1, 2, 3].forEach((k) => {
+      const xx = padL + groupW * k;
+      svg += `<line x1="${xx}" y1="${padT}" x2="${xx}" y2="${baseY}" stroke="var(--grid)" stroke-width="1"/>`;
     });
 
-    // 연도 경계선(1분기 시작 지점)을 얇게 그려서 "어디서부터 새해인지" 구분되게 한다.
+    // 매출액: 그룹 안에 연도별 막대 하나씩. 값이 없으면 막대 자리에 "미공시"만 적는다.
     geoms.forEach((g) => {
-      if (g.quarter !== 1) return;
-      const xx = g.cx - slotW / 2;
-      svg += `<line x1="${xx}" y1="${padT}" x2="${xx}" y2="${padT+plotH}" stroke="var(--grid)" stroke-width="1"/>`;
+      if (g.rev == null) {
+        svg += `<text x="${g.cx}" y="${baseY-6}" text-anchor="middle" font-size="9" fill="var(--text-muted)">미공시</text>`;
+        return;
+      }
+      svg += `<rect x="${g.cx - barW/2}" y="${yRev(g.rev)}" width="${barW}" height="${Math.max(baseY - yRev(g.rev), 1)}" fill="var(--series-1)"/>`;
     });
 
-    // %축 막대는 값이 음수면 0%선 아래로 내려가야 한다 - y/height를 부호에 안 가리고 계산.
-    function pctBarRect(x, v, color) {
-      if (v == null) return "";
-      const y0 = yPct(0), y1 = yPct(v);
-      const top = Math.min(y0, y1), h = Math.abs(y1 - y0);
-      return `<rect x="${x}" y="${top}" width="${barW}" height="${Math.max(h, 1)}" fill="${color}"/>`;
+    // v4.6: 영업이익률/순이익률은 막대 대신 꺾은선(우축)으로 매출 막대 위에 겹쳐 그린다.
+    // 선은 분기 그룹 안에서만 이어진다(1분기 23 -> 24 -> 25). 그룹을 건너뛰며 잇지 않는
+    // 건 2025년 1분기와 2023년 2분기를 잇는 선분이 아무 의미도 없기 때문.
+    function marginSeries(key, color) {
+      let out = "";
+      groups.forEach((_, gi) => {
+        const pts = geoms.filter((p) => p.gi === gi);
+        for (let i = 0; i < pts.length - 1; i++) {
+          const a = pts[i], b = pts[i+1];
+          if (a[key] == null || b[key] == null) continue;   // 미공시 구간은 선을 끊는다
+          out += `<line x1="${a.cx}" y1="${yPct(a[key])}" x2="${b.cx}" y2="${yPct(b[key])}" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>`;
+        }
+        pts.forEach((p) => {
+          if (p[key] == null) return;
+          out += `<rect x="${p.cx-3.2}" y="${yPct(p[key])-3.2}" width="6.4" height="6.4" rx="1" fill="${color}" stroke="var(--surface)" stroke-width="1"/>`;
+        });
+      });
+      return out;
     }
-    geoms.forEach((g) => {
-      if (g.rev != null) {
-        svg += `<rect x="${g.revX}" y="${yRev(g.rev)}" width="${barW}" height="${yRev(0)-yRev(g.rev)}" fill="var(--series-1)"/>`;
-      }
-      svg += pctBarRect(g.opX, g.opMargin, "var(--series-2)");
-      svg += pctBarRect(g.netX, g.netMargin, "var(--series-3)");
-    });
+    svg += marginSeries("opMargin", "var(--series-2)");
+    svg += marginSeries("netMargin", "var(--series-3)");
 
+    // 아래 라벨 두 줄: 슬롯마다 연도, 그룹 가운데에 분기.
     geoms.forEach((g) => {
-      // 연초(1분기)에만 "YY" 연도 라벨을 분기 라벨 아래 작게 추가 - 12개 라벨이
-      // 전부 "YY년 N분기"면 너무 빽빽해서, 분기 숫자만 촘촘히 두고 연도는 경계에서만.
-      svg += `<text x="${g.cx}" y="${H-14}" text-anchor="middle" font-size="10.5" fill="var(--text-secondary)">${g.quarter}Q</text>`;
-      if (g.quarter === 1) {
-        svg += `<text x="${g.cx}" y="${H-3}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${g.year}</text>`;
-      }
+      svg += `<text x="${g.cx}" y="${H-22}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${g.year}</text>`;
+    });
+    groups.forEach((g, gi) => {
+      const cx = padL + groupW * gi + groupW / 2;
+      svg += `<text x="${cx}" y="${H-6}" text-anchor="middle" font-size="11.5" font-weight="700" fill="var(--text-secondary)">${g.quarter}분기</text>`;
     });
 
     host.innerHTML = `<div class="chart-stage"><svg viewBox="0 0 ${W} ${H}" width="100%">${svg}<g class="qc-crosshair"></g></svg></div>` +
       `<div class="legend" style="margin-top:8px;">` +
-      `<div class="legend-item"><span class="legend-dot" style="background:var(--series-1)"></span>매출액 (좌축, 억원)</div>` +
-      `<div class="legend-item"><span class="legend-dot" style="background:var(--series-2)"></span>영업이익률 (우축, %)</div>` +
-      `<div class="legend-item"><span class="legend-dot" style="background:var(--series-3)"></span>순이익률 (우축, %)</div>` +
-      `</div><div class="chart-hint" style="margin-top:4px;">매출 단위: 억원 · 분기를 클릭하면 그 분기 수치가 말풍선으로 뜹니다.</div>`;
+      `<div class="legend-item"><span class="legend-dot" style="background:var(--series-1)"></span>매출액 (막대, 좌축 억원)</div>` +
+      `<div class="legend-item"><span class="legend-dot" style="width:14px;height:3px;background:var(--series-2)"></span>영업이익률 (선, 우축 %)</div>` +
+      `<div class="legend-item"><span class="legend-dot" style="width:14px;height:3px;background:var(--series-3)"></span>순이익률 (선, 우축 %)</div>` +
+      `</div><div class="chart-hint" style="margin-top:4px;">같은 분기끼리 ${years.length}개년을 묶어 비교 · 매출 단위: 억원 · 막대를 클릭하면 그 분기 수치가 말풍선으로 뜹니다.</div>`;
 
-    wireQuarterlyInteraction(host, geoms, yRev, yPct, barW, W);
+    wireQuarterlyInteraction(host, geoms, yRev, yPct, barW, baseY, W);
   }
 
-  function wireQuarterlyInteraction(host, geoms, yRev, yPct, barW, svgW) {
+  function wireQuarterlyInteraction(host, geoms, yRev, yPct, barW, baseY, svgW) {
     const stage = host.querySelector(".chart-stage");
     const svgEl = stage.querySelector("svg");
     const layer = svgEl.querySelector(".qc-crosshair");
 
-    function hlRect(x, yTop, h) {
-      return `<rect x="${x-1.5}" y="${yTop-1.5}" width="${barW+3}" height="${Math.max(h,1)+3}" fill="none" stroke="var(--text-primary)" stroke-width="1" opacity="0.35"/>`;
-    }
     function showAt(clientX) {
       const rect = svgEl.getBoundingClientRect();
-      const relX = (clientX - rect.left) / rect.width;
-      const i = Math.max(0, Math.min(geoms.length - 1, Math.floor(relX * geoms.length)));
-      const g = geoms[i];
+      // 그룹 사이에 빈 틈이 있어 막대가 등간격이 아니다 - 인덱스 비례 계산 대신 viewBox
+      // 좌표로 환산한 뒤 가장 가까운 슬롯을 고른다.
+      const vx = ((clientX - rect.left) / rect.width) * svgW;
+      let g = geoms[0];
+      geoms.forEach((p) => { if (Math.abs(p.cx - vx) < Math.abs(g.cx - vx)) g = p; });
 
       let hl = "";
-      if (g.rev != null) hl += hlRect(g.revX, yRev(g.rev), yRev(0) - yRev(g.rev));
-      if (g.opMargin != null) { const y0=yPct(0), y1=yPct(g.opMargin); hl += hlRect(g.opX, Math.min(y0,y1), Math.abs(y1-y0)); }
-      if (g.netMargin != null) { const y0=yPct(0), y1=yPct(g.netMargin); hl += hlRect(g.netX, Math.min(y0,y1), Math.abs(y1-y0)); }
+      if (g.rev != null) {
+        const yTop = yRev(g.rev);
+        hl += `<rect x="${g.cx - barW/2 - 1.5}" y="${yTop-1.5}" width="${barW+3}" height="${Math.max(baseY-yTop,1)+3}" fill="none" stroke="var(--text-primary)" stroke-width="1" opacity="0.35"/>`;
+      }
+      [["opMargin", "var(--series-2)"], ["netMargin", "var(--series-3)"]].forEach(([k, c]) => {
+        if (g[k] == null) return;
+        hl += `<circle cx="${g.cx}" cy="${yPct(g[k])}" r="6" fill="none" stroke="${c}" stroke-width="1.5" opacity="0.6"/>`;
+      });
       layer.innerHTML = hl;
 
       const old = stage.querySelector(".chart-tip");
@@ -987,7 +1002,7 @@
       const tip = document.createElement("div");
       tip.className = "chart-tip";
       tip.style.left = (g.cx / svgW * 100) + "%";
-      tip.style.top = "10%";
+      tip.style.top = "6%";
       tip.innerHTML = `<div class="tip-q">${g.year}년 ${g.quarter}분기</div>${rows}`;
       stage.appendChild(tip);
     }
