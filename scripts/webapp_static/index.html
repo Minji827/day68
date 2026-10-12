@@ -169,7 +169,7 @@
   td.name-cell { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
   td.num-cell { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .delta-up { color: var(--critical); font-weight: 600; }
-  .delta-down { color: var(--good); font-weight: 600; }
+  .delta-down { color: var(--positive); font-weight: 600; }
 
   /* 가독성 개선: 점+글자뿐이던 배지를 패딩 있는 캡슐 + 점 아이콘(::before, 색은
      currentColor라 JS 수정 없이 자동 적용)으로. 글자도 11px→12.5px, 굵게. */
@@ -193,8 +193,13 @@
   .reason-sub { font-size: 13px; color: var(--text-secondary); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .basis-counts { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
   .transition-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 99px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
-  .transition-badge.to-positive { background: var(--positive-bg); color: var(--positive); }
-  .transition-badge.to-negative { background: var(--critical-bg); color: var(--critical); }
+  /* 주식 시세 표기 관행(상승=빨강/하락=파랑)에 맞춰 F1/F2 흑자<->적자 전환 배지 색을
+     반전 - 의미 기준(좋음=파랑/나쁨=빨강)이 아니라 숫자가 오르내리는 방향 기준으로
+     바꿔달라는 사용자 요청. var(--positive)/var(--critical) 토큰 이름은 다른 곳
+     (rule-chip 등)에서 "의미" 기준으로 계속 쓰이므로 그대로 두고, 이 배지에서만
+     토큰을 서로 바꿔 끼운다. */
+  .transition-badge.to-positive { background: var(--critical-bg); color: var(--critical); }
+  .transition-badge.to-negative { background: var(--positive-bg); color: var(--positive); }
   .section-block { display: flex; flex-direction: column; gap: 10px; }
   .section-head { display: flex; align-items: baseline; gap: 10px; }
   .section-num { width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -459,16 +464,20 @@
     const ev = (DATA && DATA.change_events || []).find((e) => e.corp_code === corpCode && e.rule_id === ruleId);
     return (ev && ev.direction) || RULE_DIRECTION_DEFAULT[ruleId] || "negative";
   }
-  function ruleChipHtml(ruleId, direction) {
-    const dir = direction || RULE_DIRECTION_DEFAULT[ruleId] || "negative";
-    const arrow = dir === "positive" ? "▲" : (dir === "neutral" ? "●" : "▼");
-    return `<span class="rule-chip ${dir}">${arrow} ${ruleId}</span>`;
-  }
   // 부호전환이 핵심인 Rule(F1=영업이익, F2=현금흐름)은 %가 아니라 전환 자체를 보여준다
   // — 멘토 피드백 ②. -127% 같은 숫자는 부호가 바뀔 때 오해를 줄 수 있어서다. F6/F7은
   // "유지 중 증감"이라 전환이 아니므로 %로 표시(v4.0 — 기존 F6은 전환 룰이었으나 새
   // F1에 흡수됨).
   const TRANSITION_RULES = { F1: true, F2: true };
+  // 화살표 방향 = 색상 기준(주식 시세 표기 관행) - ▲(위)는 항상 빨강, ▼(아래)는
+  // 항상 파랑. 룰마다 "좋은 소식/나쁜 소식" 의미가 달라도 화살표 방향만 본다
+  // (사용자 요청 — 룰별 의미 기준 아님, 전부 동일하게 적용).
+  function ruleChipHtml(ruleId, direction) {
+    const dir = direction || RULE_DIRECTION_DEFAULT[ruleId] || "negative";
+    const arrow = dir === "positive" ? "▲" : (dir === "neutral" ? "●" : "▼");
+    const cls = dir === "positive" ? "negative" : dir === "negative" ? "positive" : "neutral";
+    return `<span class="rule-chip ${cls}">${arrow} ${ruleId}</span>`;
+  }
   function financialChangeCell(ruleId, rate, direction) {
     if (TRANSITION_RULES[ruleId]) {
       const toPositive = direction === "positive";
